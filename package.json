@@ -1,13 +1,13 @@
 {
-  "name": "template-react",
-  "description": "A Phaser 3 project template that demonstrates React communication and uses Vite for bundling.",
-  "version": "1.1.1",
+  "name": "spellcave",
+  "description": "Type your way down an infinite cave.",
+  "version": "0.1",
   "type": "module",
   "repository": {
       "type": "git",
       "url": "git+https://github.com/phaserjs/template-react.git"
   },
-  "author": "Phaser Studio <support@phaser.io> (https://phaser.io/)",
+  "author": "Itay Keren <itay@untame.com> (https://untame.com/itay)",
   "license": "MIT",
   "licenseUrl": "http://www.opensource.org/licenses/mit-license.php",
   "bugs": {
@@ -15,6 +15,10 @@
   },
   "homepage": "https://github.com/phaserjs/template-react#readme",
   "keywords": [
+      "spell",
+      "cave",
+      "word",
+      "game",
       "phaser",
       "phaser3",
       "react",
@@ -26,7 +30,8 @@
       "build": "node log.js build & vite build --config vite/config.prod.mjs",
       "dev-nolog": "vite --config vite/config.dev.mjs",
       "build-nolog": "vite build --config vite/config.prod.mjs",
-      "exportLetterTree": "node src/game/langProcess.js exportLetterTree"
+      "exportLetterTree": "node src/game/langProcess.js exportLetterTree",
+      "testConfig": "node src/game/langProcess.js testConfig"
   },
   "dependencies": {
       "phaser": "^3.87.0",

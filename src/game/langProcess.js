@@ -9,7 +9,8 @@ langProcess(cmd, lang)
 async function langProcess(cmd, lang) {
   switch (cmd) {
     case 'exportLetterTree':
-      await Lang.exportLetterTree(lang);
+    case 'testConfig':
+      await Lang[cmd](lang);
       break;
 
     case undefined:

@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 
-// Constants
 export class Lang {
+  // Constants
   static PublicFilePath = 'public/';
   static LangDataFilePath = 'assets/langData/';
   static LangWordsFilePrefix = 'words-';
@@ -12,11 +12,11 @@ export class Lang {
   static MaxTokenLen = 1;
   static MinWordLength = 2;
 
-  static langTokensUpper = new Set();
-  static gameTokensUpper = new Set();
-  static gameOnlyTokensUpper = new Set();
-  static allTokensUpper = new Set();
-  static gameTokensUpperToReadable = new Map();
+  langTokensUpper = new Set();
+  gameTokensUpper = new Set();
+  gameOnlyTokensUpper = new Set();
+  allTokensUpper = new Set();
+  gameTokensUpperToReadable = new Map();
 
   #letterTree = null;
   #frequencies = null;
@@ -25,7 +25,7 @@ export class Lang {
   #langDataJSON = null;
 
   static #Instance = null;
-  static #initialized = false;
+  #initialized = false;
 
   constructor() {
     if (Lang.#Instance) {
@@ -35,20 +35,23 @@ export class Lang {
   }
 
   static getInstance = () => Lang.#Instance ??= new Lang();
+  isInitialized = () => this.#initialized;
 
   async initialize(lang) {
+    if (this.#initialized)
+      return false;
+
     try {
       await this.#readLangData(lang);
       await this.#readProbData(lang);
       await this.#readLetterTree(lang);
-      Lang.#initialized = true;
+      this.#initialized = true;
       return true;
     } catch (error) {
       console.error('Initialization error:', error);
       return false;
     }
   }
-
 
   async #readLangData(lang) {
     try {
@@ -59,7 +62,7 @@ export class Lang {
 
       this.#langDataJSON = await response.json();
 
-      await Lang.processLangData(this.#langDataJSON);
+      await this.processLangData(this.#langDataJSON);
 
     } catch (error) {
       console.error('Error reading language data:', error);
@@ -67,39 +70,36 @@ export class Lang {
     }
   }
 
-  static async processLangData(langDataJSON) {
-    // Ensure instance
-    Lang.getInstance();
-
-    Lang.langTokensUpper.clear();
-    Lang.gameTokensUpper.clear();
-    Lang.allTokensUpper.clear();
-    Lang.gameOnlyTokensUpper.clear();
-    Lang.gameTokensUpperToReadable.clear();
+  async processLangData(langDataJSON) {
+    this.langTokensUpper.clear();
+    this.gameTokensUpper.clear();
+    this.allTokensUpper.clear();
+    this.gameOnlyTokensUpper.clear();
+    this.gameTokensUpperToReadable.clear();
 
     // Process tokens
     for (const token of langDataJSON.Tokens) {
       const tok = token.toUpperCase();
-      Lang.langTokensUpper.add(tok);
-      Lang.allTokensUpper.add(tok);
+      this.langTokensUpper.add(tok);
+      this.allTokensUpper.add(tok);
     }
 
     // Process game tokens
     for (const token of langDataJSON.GameTokens) {
       const up = token.toUpperCase();
-      Lang.gameTokensUpper.add(up);
+      this.gameTokensUpper.add(up);
 
       if (up !== token) {
-        Lang.gameTokensUpperToReadable.set(up, token);
+        this.gameTokensUpperToReadable.set(up, token);
       }
 
       if (token.length > Lang.MaxTokenLen) {
         Lang.MaxTokenLen = token.length;
       }
 
-      if (!Lang.langTokensUpper.has(up)) {
-        Lang.gameOnlyTokensUpper.add(up);
-        Lang.allTokensUpper.add(up);
+      if (!this.langTokensUpper.has(up)) {
+        this.gameOnlyTokensUpper.add(up);
+        this.allTokensUpper.add(up);
       }
     }
 
@@ -203,6 +203,8 @@ export class Lang {
     return totalTmpProbs;
   }
 
+  // Queries
+
   randomizeTokenWithProbabilities(negProbs, addlTokens, baseTokensOnly = false, tokenRandom = 0.0) {
     let totalTmpProbs = 0;
     this.#frequenciesTemp.clear();
@@ -245,7 +247,7 @@ export class Lang {
 
     const part = wildIdx === 0 ? '' : word.slice(0, wildIdx);
     const wildcardOptions = wildIdx === 0 ?
-      Lang.allTokensUpper :
+      this.allTokensUpper :
       this.nextLettersInPartialWord(part);
 
     if (!wildcardOptions) return results;
@@ -260,32 +262,31 @@ export class Lang {
 
   isPartialWord(word) {
     if (!word.length) return false;
-    const result = this.#letterTree.isPartialOrFullWord(word.toUpperCase());
+    const result = this.#letterTree.isPartialOrFullWord(word.toUpperCase(), this);
     return result.isPartial;
   }
 
   isWord(word) {
     if (word.length < Lang.MinWordLength) return false;
-    const result = this.#letterTree.isPartialOrFullWord(word.toUpperCase());
+    const result = this.#letterTree.isPartialOrFullWord(word.toUpperCase(), this);
     return result.isFullWord;
   }
 
   nextLettersInPartialWord(word) {
     if (!word.length) return null;
-    const partial = this.#letterTree.getPartialWord(word.toUpperCase());
+    const partial = this.#letterTree.getPartialWord(word.toUpperCase(), this);
     return partial?.nextTokens ? Array.from(partial.nextTokens.keys()) : null;
   }
 
-  getRandomWord(length) {
-    return this.#letterTree.getRandomWord(length);
-  }
+  getRandomWord = (length) => this.#letterTree.getRandomWord(length, this);
 
+  getNextGameToken = (word) => Lang.getNextToken(word, this.gameTokensUpper);
+
+  getReadableToken = (tok) => this.gameTokensUpperToReadable.get(tok) || tok;
 
   //
   // Static functions
   //
-
-  static isInitialized = () => Lang.#initialized;
 
   static getRandom01 = () => Math.random();
 
@@ -310,10 +311,6 @@ export class Lang {
 
   static lerp = (start, end, amt) => ((1 - amt) * start + amt * end);
 
-  static getNextGameToken = (word) => Lang.getNextToken(word, Lang.gameTokensUpper);
-
-  static getReadableToken = (tok) => Lang.gameTokensUpperToReadable.get(tok) || tok;
-
   static getAveragedRandom01(avg) {
     const rand = Lang.getRandom01();
     return rand < 0.5 ?
@@ -326,6 +323,7 @@ export class Lang {
     return Lang.lerp(min, max, rand);
   }
 
+  // Remove first character (byte order mark) if available
   static stripBOM = (data) => data.charCodeAt(0) === 0xFEFF ? data.substring(1) : data;
 
   //
@@ -335,8 +333,10 @@ export class Lang {
   static async exportLetterTree(lang) {
     try {
 
+      const langInstance = Lang.getInstance();
+
       const configContent = await fs.readFile(`${Lang.PublicFilePath}${Lang.LangDataFilePath}${Lang.LangDataFilePrefix}${lang}.json`, 'utf-8');
-      Lang.processLangData(JSON.parse(Lang.stripBOM(configContent)));
+      langInstance.processLangData(JSON.parse(Lang.stripBOM(configContent)));
 
       const timeStart = performance.now();
 
@@ -344,7 +344,7 @@ export class Lang {
       const wordsContent = await fs.readFile(`${Lang.PublicFilePath}${Lang.LangDataFilePath}${Lang.LangWordsFilePrefix}${lang}.txt`, 'utf-8');
 
       // Process words and create tree
-      const { numWords, treeData, probabilities } = await Lang.processWords(Lang.stripBOM(wordsContent));
+      const { numWords, treeData, probabilities } = await Lang.processWords(Lang.stripBOM(wordsContent), langInstance);
 
       // Save tree file
       await fs.writeFile(`${Lang.PublicFilePath}${Lang.LangDataFilePath}${Lang.LangTreeFilePrefix}${lang}.txt`, treeData);
@@ -353,7 +353,7 @@ export class Lang {
       await fs.writeFile(`${Lang.PublicFilePath}${Lang.LangDataFilePath}${Lang.LangProbFilePrefix}${lang}.json`, JSON.stringify(probabilities, null, 2));
 
       const timeSec = (performance.now() - timeStart) / 1000;
-      console.log(`Tree data length: ${treeData.length}, #words: ${numWords}, Time: ${timeSec.toFixed(3)}s`);
+      console.log(`Tree data length: ${(treeData.length/1024).toFixed(2)} kb, #words: ${numWords}, Time: ${timeSec.toFixed(3)}s`);
 
     } catch (error) {
       console.error('Error exporting letter tree:', error);
@@ -365,7 +365,7 @@ export class Lang {
    * @param {string} content - Raw words content
    * @returns {Promise<{treeData: string, probabilities: Object, numWords: Number}>}
    */
-  static async processWords(content) {
+  static async processWords(content, langInstance) {
     const words = content.split('\n')
       .map(word => word.trim().toUpperCase())
       .filter(word => word.length >= Lang.MinWordLength);
@@ -374,10 +374,10 @@ export class Lang {
     const tree = new TokenNode();
 
     words.forEach(word => {
-      tree.addWord(word);
+      tree.addWord(word, langInstance);
 
       for (let i = 0, tok;
-        tok = Lang.getNextToken(word.substring(i), Lang.gameTokensUpper);
+        tok = Lang.getNextToken(word.substring(i), langInstance.gameTokensUpper);
         i += tok.length) {
         probabilities[tok] = (probabilities[tok] ?? 0) + 1;
       }
@@ -395,8 +395,8 @@ class TokenNode {
   nextTokens = null;
   isWord = false;
 
-  addWord(word) {
-    const token = Lang.getNextToken(word, Lang.langTokensUpper);
+  addWord(word, langInstance) {
+    const token = Lang.getNextToken(word, langInstance.langTokensUpper);
     let next;
     let rest;
 
@@ -404,19 +404,19 @@ class TokenNode {
       next = this.#addWordToken(token);
       rest = word.slice(token.length);
       if (rest.length > 0) {
-        next.addWord(rest);
+        next.addWord(rest, langInstance);
       } else {
         next.isWord = true;
       }
     }
 
-    const gameToken = Lang.getNextToken(word, Lang.gameOnlyTokensUpper);
+    const gameToken = Lang.getNextToken(word, langInstance.gameOnlyTokensUpper);
     if (gameToken === null) return;
 
     next = this.#addWordToken(gameToken);
     rest = word.slice(gameToken.length);
     if (rest.length > 0) {
-      next.addWord(rest);
+      next.addWord(rest, langInstance);
     } else {
       next.isWord = true;
     }
@@ -435,12 +435,12 @@ class TokenNode {
     return wordToken;
   }
 
-  isPartialOrFullWord(word) {
+  isPartialOrFullWord(word, langInstance) {
     if (word.length === 0) {
       return { isPartial: true, isFullWord: this.isWord };
     }
 
-    const token = Lang.getNextToken(word, Lang.langTokensUpper);
+    const token = Lang.getNextToken(word, langInstance.langTokensUpper);
     if (!token) return { isPartial: false, isFullWord: false };
 
     const rest = word.slice(token.length);
@@ -448,34 +448,34 @@ class TokenNode {
       return { isPartial: false, isFullWord: false };
     }
 
-    return this.nextTokens.get(token).isPartialOrFullWord(rest);
+    return this.nextTokens.get(token).isPartialOrFullWord(rest, langInstance);
   }
 
-  getPartialWord(word) {
+  getPartialWord(word, langInstance) {
     if (word.length === 0) return this;
 
-    const token = Lang.getNextToken(word, Lang.langTokensUpper);
+    const token = Lang.getNextToken(word, langInstance.langTokensUpper);
     if (!token) return null;
 
     const rest = word.slice(token.length);
     if (!this.nextTokens || !this.nextTokens.has(token)) return null;
 
-    return this.nextTokens.get(token).getPartialWord(rest);
+    return this.nextTokens.get(token).getPartialWord(rest, langInstance);
   }
 
-  getRandomWord(numTokens, word = '') {
+  getRandomWord(numTokens, langInstance, word = '') {
     if (!this.nextTokens || this.nextTokens.size === 0) return null;
 
     const options = Array.from(this.nextTokens.keys());
     while (options.length > 0) {
       const i = getRandomRange(0, options.length);
       const tok = options[i];
-      if (Lang.gameTokensUpper.has(tok)) {
+      if (langInstance.gameTokensUpper.has(tok)) {
         const nl = this.nextTokens.get(tok);
         if (numTokens <= 1) {
           return nl.isWord ? (word + tok) : null;
         } else {
-          const recWord = nl.getRandomWord(numTokens - 1, word + tok);
+          const recWord = nl.getRandomWord(numTokens - 1, langInstance, word + tok);
           if (recWord !== null) return recWord;
         }
       }
