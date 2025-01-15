@@ -30,8 +30,8 @@
       "build": "node log.js build & vite build --config vite/config.prod.mjs",
       "dev-nolog": "vite --config vite/config.dev.mjs",
       "build-nolog": "vite build --config vite/config.prod.mjs",
-      "exportLetterTree": "node src/game/langProcess.js exportLetterTree",
-      "testConfig": "node src/game/langProcess.js testConfig"
+      "exportTree": "node src/game/offlineCommand.js exportTree",
+      "testTree": "node src/game/offlineCommand.js testTree"
   },
   "dependencies": {
       "phaser": "^3.87.0",

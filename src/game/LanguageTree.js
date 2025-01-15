@@ -1,16 +1,19 @@
 import fs from 'fs/promises';
 
-export class Lang {
+export class LanguageTree {
   // Constants
   static PublicFilePath = 'public/';
   static LangDataFilePath = 'assets/langData/';
   static LangWordsFilePrefix = 'words-';
-  static LangDataFilePrefix = 'config-';
+  static LangConfigFilePrefix = 'config-';
   static LangTreeFilePrefix = 'tree-';
   static LangProbFilePrefix = 'prob-';
   static WildcardToken = '?';
   static MaxTokenLen = 1;
   static MinWordLength = 2;
+
+  // Utility data
+  static generalData;
 
   langTokensUpper = new Set();
   gameTokensUpper = new Set();
@@ -18,7 +21,7 @@ export class Lang {
   allTokensUpper = new Set();
   gameTokensUpperToReadable = new Map();
 
-  #letterTree = null;
+  #tokenTree = null;
   #frequencies = null;
   #frequenciesBase = null;
   #frequenciesTemp = null;
@@ -28,23 +31,29 @@ export class Lang {
   #initialized = false;
 
   constructor() {
-    if (Lang.#Instance) {
-      throw new Error('Lang instance already exists');
+    if (LanguageTree.#Instance) {
+      throw new Error('LanguageTree instance already exists');
     }
-    Lang.#Instance = this;
+    LanguageTree.#Instance = this;
+
+    LanguageTree.generalData = {
+      numWords: 0,
+      numTokens: 0,
+      letterTreeSize: 0
+    };
   }
 
-  static getInstance = () => Lang.#Instance ??= new Lang();
+  static getInstance = () => LanguageTree.#Instance ??= new LanguageTree();
   isInitialized = () => this.#initialized;
 
-  async initialize(lang) {
+  async initialize(langCode, offline) {
     if (this.#initialized)
       return false;
 
     try {
-      await this.#readLangData(lang);
-      await this.#readProbData(lang);
-      await this.#readLetterTree(lang);
+      await this.readLangConfig(langCode, offline);
+      await this.readProbData(langCode, offline);
+      await this.readLetterTree(langCode, offline);
       this.#initialized = true;
       return true;
     } catch (error) {
@@ -53,16 +62,10 @@ export class Lang {
     }
   }
 
-  async #readLangData(lang) {
+  async readLangConfig(langCode, offline) {
     try {
-      const response = await fetch(`${Lang.LangDataFilePath}${Lang.LangDataFilePrefix}${lang}.json`);
-      if (!response.ok) {
-        throw new Error(`${Lang.LangDataFilePath}${this.LangDataFilePrefix}${lang} file missing`);
-      }
-
-      this.#langDataJSON = await response.json();
-
-      await this.processLangData(this.#langDataJSON);
+      this.#langDataJSON = await LanguageTree.readFileJSON(`${LanguageTree.LangConfigFilePrefix}${langCode}.json`, offline);
+      await this.processLangConfig(this.#langDataJSON);
 
     } catch (error) {
       console.error('Error reading language data:', error);
@@ -70,7 +73,7 @@ export class Lang {
     }
   }
 
-  async processLangData(langDataJSON) {
+  async processLangConfig(langConfigJSON) {
     this.langTokensUpper.clear();
     this.gameTokensUpper.clear();
     this.allTokensUpper.clear();
@@ -78,14 +81,14 @@ export class Lang {
     this.gameTokensUpperToReadable.clear();
 
     // Process tokens
-    for (const token of langDataJSON.Tokens) {
+    for (const token of langConfigJSON.Tokens) {
       const tok = token.toUpperCase();
       this.langTokensUpper.add(tok);
       this.allTokensUpper.add(tok);
     }
 
     // Process game tokens
-    for (const token of langDataJSON.GameTokens) {
+    for (const token of langConfigJSON.GameTokens) {
       const up = token.toUpperCase();
       this.gameTokensUpper.add(up);
 
@@ -93,8 +96,8 @@ export class Lang {
         this.gameTokensUpperToReadable.set(up, token);
       }
 
-      if (token.length > Lang.MaxTokenLen) {
-        Lang.MaxTokenLen = token.length;
+      if (token.length > LanguageTree.MaxTokenLen) {
+        LanguageTree.MaxTokenLen = token.length;
       }
 
       if (!this.langTokensUpper.has(up)) {
@@ -104,23 +107,18 @@ export class Lang {
     }
 
     // Process parameters
-    if (langDataJSON.MinimumWord) {
-      Lang.MinWordLength = langDataJSON.MinimumWord;
+    if (langConfigJSON.MinimumWord) {
+      LanguageTree.MinWordLength = langConfigJSON.MinimumWord;
     }
 
-    if (langDataJSON.WildcardToken) {
-      Lang.WildcardToken = langDataJSON.WildcardToken;
+    if (langConfigJSON.WildcardToken) {
+      LanguageTree.WildcardToken = langConfigJSON.WildcardToken;
     }
   }
 
-  async #readProbData(lang) {
+  async readProbData(langCode, offline) {
     try {
-      const response = await fetch(`${Lang.LangDataFilePath}${Lang.LangProbFilePrefix}${lang}.json`);
-      if (!response.ok) {
-        throw new Error(`${Lang.LangDataFilePath}${Lang.LangProbFilePrefix}${lang} file missing`);
-      }
-
-      const probData = await response.json();
+      const probData = await LanguageTree.readFileJSON(`${LanguageTree.LangProbFilePrefix}${langCode}.json`, offline);
       this.#frequenciesBase = new Map();
 
       let baseTotalFreq = 0;
@@ -139,16 +137,13 @@ export class Lang {
     }
   }
 
-  async #readLetterTree(lang) {
+  async readLetterTree(langCode, offline) {
     try {
-      const response = await fetch(`${Lang.LangDataFilePath}${Lang.LangTreeFilePrefix}${lang}.txt`);
-      if (!response.ok) {
-        throw new Error(`${Lang.LangDataFilePath}${Lang.LangTreeFilePrefix}${lang} file missing`);
-      }
+      const text = await LanguageTree.readFile(`${LanguageTree.LangTreeFilePrefix}${langCode}.txt`, offline);
+      LanguageTree.generalData.letterTreeSize = text.length;
 
-      const text = await response.text();
-      this.#letterTree = new TokenNode();
-      this.#letterTree.deserialize(text);
+      this.#tokenTree = new TokenNode();
+      this.#tokenTree.deserialize(text);
     } catch (error) {
       console.error('Error reading words:', error);
       throw error;
@@ -177,7 +172,7 @@ export class Lang {
   }
 
   randomizeToken(baseOnly = false) {
-    let rando = Lang.getRandom01();
+    let rando = LanguageTree.getRandom01();
     const freqs = baseOnly ? this.#frequenciesBase : this.#frequencies;
 
     for (const [key, value] of freqs) {
@@ -227,7 +222,7 @@ export class Lang {
       );
     }
 
-    let rando = Lang.getRandom01() * totalTmpProbs;
+    let rando = LanguageTree.getRandom01() * totalTmpProbs;
     for (const [key, prob] of this.#frequenciesTemp) {
       if (rando < prob) return key;
       rando -= prob;
@@ -237,9 +232,9 @@ export class Lang {
   }
 
   getAllWildcardPartialWords(word, results = new Set()) {
-    const wildIdx = word.indexOf(Lang.WildcardToken);
+    const wildIdx = word.indexOf(LanguageTree.WildcardToken);
     if (wildIdx < 0) {
-      if (this.isPartialWord(word)) {
+      if (this.isValidPartialWord(word)) {
         results.add(word);
       }
       return results;
@@ -260,33 +255,86 @@ export class Lang {
     return results;
   }
 
-  isPartialWord(word) {
+  getAllWildcardWords(word, results = new Set()) {
+    const wildIdx = word.indexOf(LanguageTree.WildcardToken);
+    if (wildIdx < 0) {
+      if (this.isValidWord(word)) {
+        results.add(word);
+      }
+      return results;
+    }
+
+    const part = wildIdx === 0 ? '' : word.slice(0, wildIdx);
+    const wildcardOptions = wildIdx === 0 ?
+      this.allTokensUpper :
+      this.nextLettersInPartialWord(part);
+
+    if (!wildcardOptions) return results;
+
+    const rest = word.slice(wildIdx + 1);
+    for (const option of wildcardOptions) {
+      this.getAllWildcardWords(part + option + rest, results);
+    }
+
+    return results;
+  }
+
+  isValidPartialWord(word) {
     if (!word.length) return false;
-    const result = this.#letterTree.isPartialOrFullWord(word.toUpperCase(), this);
+    const result = this.#tokenTree.isPartialOrFullWord(word.toUpperCase(), this);
     return result.isPartial;
   }
 
-  isWord(word) {
-    if (word.length < Lang.MinWordLength) return false;
-    const result = this.#letterTree.isPartialOrFullWord(word.toUpperCase(), this);
+  isValidWord(word) {
+    if (word.length < LanguageTree.MinWordLength) return false;
+    const result = this.#tokenTree.isPartialOrFullWord(word.toUpperCase(), this);
     return result.isFullWord;
   }
 
   nextLettersInPartialWord(word) {
     if (!word.length) return null;
-    const partial = this.#letterTree.getPartialWord(word.toUpperCase(), this);
+    const partial = this.#tokenTree.getPartialWord(word.toUpperCase(), this);
     return partial?.nextTokens ? Array.from(partial.nextTokens.keys()) : null;
   }
 
-  getRandomWord = (length) => this.#letterTree.getRandomWord(length, this);
+  getRandomWord = (length) => this.#tokenTree.getRandomWord(length, this);
 
-  getNextGameToken = (word) => Lang.getNextToken(word, this.gameTokensUpper);
+  getNextGameToken = (word) => LanguageTree.getNextToken(word, this.gameTokensUpper);
 
   getReadableToken = (tok) => this.gameTokensUpperToReadable.get(tok) || tok;
 
   //
   // Static functions
   //
+
+    // Read text file as JSON, online (default) or offline
+  static async readFileJSON(filepath, offline) {
+    if (offline) {
+      const configContent = await fs.readFile(`${LanguageTree.PublicFilePath}${LanguageTree.LangDataFilePath}${filepath}`, 'utf-8');
+      return JSON.parse(LanguageTree.stripBOM(configContent));
+    }
+
+    const response = await fetch(`${LanguageTree.LangDataFilePath}${filepath}`);
+    if (!response.ok) {
+      throw new Error(`${filepath} file missing`);
+    }
+    return await response.json();
+  }
+
+    // Read text file, online (default) or offline
+  static async readFile(filepath, offline) {
+    if (offline) {
+      const configContent = await fs.readFile(`${LanguageTree.PublicFilePath}${LanguageTree.LangDataFilePath}${filepath}`, 'utf-8');
+      return LanguageTree.stripBOM(configContent);
+    }
+
+    const response = await fetch(`${LanguageTree.LangDataFilePath}${filepath}`);
+    if (!response.ok) {
+      throw new Error(`${filepath} file missing`);
+    }
+    return await response.text();
+  }
+
 
   static getRandom01 = () => Math.random();
 
@@ -302,7 +350,7 @@ export class Lang {
   static getNextToken(word, tokenList) {
     if (word.length === 0) return null;
 
-    for (let tokLen = 1; tokLen <= Lang.MaxTokenLen && tokLen <= word.length; tokLen++) {
+    for (let tokLen = 1; tokLen <= LanguageTree.MaxTokenLen && tokLen <= word.length; tokLen++) {
       const token = word.slice(0, tokLen);
       if (tokenList.has(token)) return token;
     }
@@ -312,51 +360,73 @@ export class Lang {
   static lerp = (start, end, amt) => ((1 - amt) * start + amt * end);
 
   static getAveragedRandom01(avg) {
-    const rand = Lang.getRandom01();
+    const rand = LanguageTree.getRandom01();
     return rand < 0.5 ?
-      Lang.lerp(0, avg, rand * 2) :
-      Lang.lerp(avg, 1, (rand - 0.5) * 2);
+      LanguageTree.lerp(0, avg, rand * 2) :
+      LanguageTree.lerp(avg, 1, (rand - 0.5) * 2);
   }
 
   static getAveragedRandomRange(min, avg, max) {
-    const rand = Lang.getAveragedRandom01((avg - min) / (max - min));
-    return Lang.lerp(min, max, rand);
+    const rand = LanguageTree.getAveragedRandom01((avg - min) / (max - min));
+    return LanguageTree.lerp(min, max, rand);
   }
 
   // Remove first character (byte order mark) if available
-  static stripBOM = (data) => data.charCodeAt(0) === 0xFEFF ? data.substring(1) : data;
+  static stripBOM = (data) => data.charCodeAt(0) === 0xFEFF ? data.slice(1) : data;
+
+
+  static replaceRandomLetters(str, numToReplace, replacementChar) {
+    let chars = str.split('');
+    let availableIndices = [...Array(str.length).keys()]; // [0,1,2,...,length-1]
+
+    // Ensure we don't try to replace more characters than available
+    numToReplace = Math.min(numToReplace, str.length);
+
+    for (let i = 0; i < numToReplace; i++) {
+        // Get random index from remaining available positions
+        const randomPos = Math.floor(Math.random() * availableIndices.length);
+        const indexToReplace = availableIndices[randomPos];
+
+        // Replace the character
+        chars[indexToReplace] = replacementChar;
+
+        // Remove this index from available positions
+        availableIndices.splice(randomPos, 1);
+    }
+
+    return chars.join('');
+}
 
   //
   //  Offline processing (menu items)
   //
 
-  static async exportLetterTree(lang) {
+  static async exportTree(langCode) {
     try {
 
-      const langInstance = Lang.getInstance();
+      const langInstance = LanguageTree.getInstance();
 
-      const configContent = await fs.readFile(`${Lang.PublicFilePath}${Lang.LangDataFilePath}${Lang.LangDataFilePrefix}${lang}.json`, 'utf-8');
-      langInstance.processLangData(JSON.parse(Lang.stripBOM(configContent)));
-
-      const timeStart = performance.now();
+      // Configuration
+      langInstance.readLangConfig(langCode, true);
 
       // Read words file
-      const wordsContent = await fs.readFile(`${Lang.PublicFilePath}${Lang.LangDataFilePath}${Lang.LangWordsFilePrefix}${lang}.txt`, 'utf-8');
+      const wordsContent = await LanguageTree.readFile(`${LanguageTree.LangWordsFilePrefix}${langCode}.txt`, true);
 
       // Process words and create tree
-      const { numWords, treeData, probabilities } = await Lang.processWords(Lang.stripBOM(wordsContent), langInstance);
+      const { numWords, treeData, probabilities } = await LanguageTree.processWords(LanguageTree.stripBOM(wordsContent), langInstance);
 
       // Save tree file
-      await fs.writeFile(`${Lang.PublicFilePath}${Lang.LangDataFilePath}${Lang.LangTreeFilePrefix}${lang}.txt`, treeData);
+      await fs.writeFile(`${LanguageTree.PublicFilePath}${LanguageTree.LangDataFilePath}${LanguageTree.LangTreeFilePrefix}${langCode}.txt`, treeData);
 
       // Save probabilities file
-      await fs.writeFile(`${Lang.PublicFilePath}${Lang.LangDataFilePath}${Lang.LangProbFilePrefix}${lang}.json`, JSON.stringify(probabilities, null, 2));
+      await fs.writeFile(`${LanguageTree.PublicFilePath}${LanguageTree.LangDataFilePath}${LanguageTree.LangProbFilePrefix}${langCode}.json`, JSON.stringify(probabilities, null, 2));
 
-      const timeSec = (performance.now() - timeStart) / 1000;
-      console.log(`Tree data length: ${(treeData.length/1024).toFixed(2)} kb, #words: ${numWords}, Time: ${timeSec.toFixed(3)}s`);
+      LanguageTree.generalData.letterTreeSize = treeData.length;
+
+      console.log(`#words: ${numWords}`, LanguageTree.generalData);
 
     } catch (error) {
-      console.error('Error exporting letter tree:', error);
+      console.error('Error exporting tree:', error);
     }
   }
 
@@ -368,7 +438,7 @@ export class Lang {
   static async processWords(content, langInstance) {
     const words = content.split('\n')
       .map(word => word.trim().toUpperCase())
-      .filter(word => word.length >= Lang.MinWordLength);
+      .filter(word => word.length >= LanguageTree.MinWordLength);
 
     const probabilities = new Map();
     const tree = new TokenNode();
@@ -377,7 +447,7 @@ export class Lang {
       tree.addWord(word, langInstance);
 
       for (let i = 0, tok;
-        tok = Lang.getNextToken(word.substring(i), langInstance.gameTokensUpper);
+        tok = LanguageTree.getNextToken(word.slice(i), langInstance.gameTokensUpper);
         i += tok.length) {
         probabilities[tok] = (probabilities[tok] ?? 0) + 1;
       }
@@ -389,50 +459,84 @@ export class Lang {
       probabilities
     };
   }
+
+  static async testTree(langCode) {
+    const langInstance = LanguageTree.getInstance();
+    await langInstance.initialize(langCode, true);  // Offline initialization
+
+    console.log('Random words:');
+    for (let i = LanguageTree.MinWordLength; i < 20; ++i) {
+      let word = langInstance.getRandomWord(i);
+      if (!word)
+        break;
+      console.log(i, word);
+    }
+
+    let word = langInstance.getRandomWord(LanguageTree.MinWordLength);
+    console.log(`\nCompletion: (random word '${word}')`);
+    while (word) {
+      let tokenOptions = langInstance.nextLettersInPartialWord(word);
+      console.log(`Possible letters after '${word}':`, tokenOptions);
+      if (tokenOptions?.length)
+        word += tokenOptions[0];
+      else
+        word = null;
+    }
+
+
+    // word = 'FL*W**';
+    word = LanguageTree.replaceRandomLetters(langInstance.getRandomWord(7), 3, LanguageTree.WildcardToken);
+    console.log(`\nWildcard word ${word} completion:`, langInstance.getAllWildcardWords(word));
+  }
 }
 
 class TokenNode {
+  // Map of next tokens token(string) -> TokenNode
   nextTokens = null;
+  // Is a complete word (along with previous tree TokenNode's)
   isWord = false;
 
   addWord(word, langInstance) {
-    const token = Lang.getNextToken(word, langInstance.langTokensUpper);
-    let next;
-    let rest;
+    const token = LanguageTree.getNextToken(word, langInstance.langTokensUpper);
+    let tokenNode;
+    let restStr;
 
-    if (token !== null) {
-      next = this.#addWordToken(token);
-      rest = word.slice(token.length);
-      if (rest.length > 0) {
-        next.addWord(rest, langInstance);
+    if (token) {
+      tokenNode = this.#addWordToken(token);
+      restStr = word.slice(token.length);
+      if (restStr.length > 0) {
+        tokenNode.addWord(restStr, langInstance);
       } else {
-        next.isWord = true;
+        tokenNode.isWord = true;
+        ++LanguageTree.generalData.numWords;
       }
     }
 
-    const gameToken = Lang.getNextToken(word, langInstance.gameOnlyTokensUpper);
-    if (gameToken === null) return;
+    // Fork for game only next token (e.g. QU)
+    const gameToken = LanguageTree.getNextToken(word, langInstance.gameOnlyTokensUpper);
+    if (!gameToken)
+      return;
 
-    next = this.#addWordToken(gameToken);
-    rest = word.slice(gameToken.length);
-    if (rest.length > 0) {
-      next.addWord(rest, langInstance);
+    tokenNode = this.#addWordToken(gameToken);
+    restStr = word.slice(gameToken.length);
+    if (restStr.length > 0) {
+      tokenNode.addWord(restStr, langInstance);
     } else {
-      next.isWord = true;
+      tokenNode.isWord = true;
+      ++LanguageTree.generalData.numWords;
     }
   }
 
   #addWordToken(token) {
-    if (!this.nextTokens) {
-      this.nextTokens = new Map();
-    }
+    this.nextTokens ??= new Map();
 
-    let wordToken = this.nextTokens.get(token);
-    if (!wordToken) {
-      wordToken = new TokenNode();
-      this.nextTokens.set(token, wordToken);
+    let wordTokenNode = this.nextTokens.get(token);
+    if (!wordTokenNode) {
+      wordTokenNode = new TokenNode();
+      ++LanguageTree.generalData.numTokens;
+      this.nextTokens.set(token, wordTokenNode);
     }
-    return wordToken;
+    return wordTokenNode;
   }
 
   isPartialOrFullWord(word, langInstance) {
@@ -440,7 +544,7 @@ class TokenNode {
       return { isPartial: true, isFullWord: this.isWord };
     }
 
-    const token = Lang.getNextToken(word, langInstance.langTokensUpper);
+    const token = LanguageTree.getNextToken(word, langInstance.langTokensUpper);
     if (!token) return { isPartial: false, isFullWord: false };
 
     const rest = word.slice(token.length);
@@ -454,7 +558,7 @@ class TokenNode {
   getPartialWord(word, langInstance) {
     if (word.length === 0) return this;
 
-    const token = Lang.getNextToken(word, langInstance.langTokensUpper);
+    const token = LanguageTree.getNextToken(word, langInstance.langTokensUpper);
     if (!token) return null;
 
     const rest = word.slice(token.length);
@@ -468,7 +572,7 @@ class TokenNode {
 
     const options = Array.from(this.nextTokens.keys());
     while (options.length > 0) {
-      const i = getRandomRange(0, options.length);
+      const i = LanguageTree.getRandomRange(0, options.length);
       const tok = options[i];
       if (langInstance.gameTokensUpper.has(tok)) {
         const nl = this.nextTokens.get(tok);
@@ -501,31 +605,46 @@ class TokenNode {
     return result + (this.isWord ? ']' : ')');
   }
 
-  deserialize(text) {
+  deserialize(text, posRef = { value: 0 }) {
+
     this.isWord = true;
-    let pos = 0;
+    const peek = () => text[posRef.value] || '';
+    const read = () => text[posRef.value++] || '';
+    const incWordCount = () => this.isWord && ++LanguageTree.generalData.numWords;
 
-    const peek = () => text[pos] || '';
-    const read = () => text[pos++] || '';
+    switch (peek()) {
+      case '':
+        return;
 
-    const next = peek();
-    if (!next) return;
+      case ']':
+      case ')':
+        incWordCount();
+        return;
 
-    if (next === ')' || next === ']') return;
+      case '(':
+        this.isWord = false;
+        break;
 
-    if (next === '(') this.isWord = false;
-    else if (next !== '[') return;
+      case '[':
+        break;
 
-    pos++;
+      default:
+        incWordCount();
+        return;
+    }
 
-    while (pos < text.length) {
+    incWordCount();
+
+    posRef.value++;
+
+    while (posRef.value < text.length) {
       const c = read();
       if (c === ')' || c === ']') return;
 
       let token;
       if (c === '{') {
         token = '';
-        while (pos < text.length) {
+        while (posRef.value < text.length) {
           const nextChar = read();
           if (!nextChar || nextChar === '}') break;
           token += nextChar;
@@ -535,7 +654,7 @@ class TokenNode {
       }
 
       const nl = this.#addWordToken(token);
-      nl.deserialize(text.slice(pos));
+      nl.deserialize(text, posRef);
     }
   }
 }
@@ -550,7 +669,7 @@ await lang.initialize();
 const word = lang.getRandomWord(5);
 
 // Check if a word is valid
-const isValid = lang.isWord('HELLO');
+const isValid = lang.isValidWord('HELLO');
 
 // Get next possible letters for a partial word
 const nextLetters = lang.nextLettersInPartialWord('HE');
