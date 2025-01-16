@@ -255,6 +255,13 @@ export class LanguageTree {
     return results;
   }
 
+  /**
+   * Recursively finds all valid words by replacing wildcard tokens in the given word.
+   *
+   * @param {string} word - The word containing wildcard tokens to be replaced.
+   * @param {Set<string>} [results=new Set()] - A set to store the valid words found.
+   * @returns {Set<string>} A set of valid words with all wildcard tokens replaced.
+   */
   getAllWildcardWords(word, results = new Set()) {
     const wildIdx = word.indexOf(LanguageTree.WildcardToken);
     if (wildIdx < 0) {
@@ -279,28 +286,79 @@ export class LanguageTree {
     return results;
   }
 
+  /**
+   * Checks if the given word is a valid partial word.
+   *
+   * @param {string} word - The word to check.
+   * @returns {boolean} True if the word is a valid partial word, false otherwise.
+   */
   isValidPartialWord(word) {
     if (!word.length) return false;
-    const result = this.#tokenTree.isPartialOrFullWord(word.toUpperCase(), this);
+    const result = this.#tokenTree.isPartialOrFullWord(word.toUpperCase(), this.gameTokensUpper);
     return result.isPartial;
   }
 
+  /**
+   * Checks if the given word is a valid word according to the language tree.
+   *
+   * @param {string} word - The word to validate.
+   * @returns {boolean} - Returns true if the word is a valid full word, otherwise false.
+   */
   isValidWord(word) {
     if (word.length < LanguageTree.MinWordLength) return false;
-    const result = this.#tokenTree.isPartialOrFullWord(word.toUpperCase(), this);
+    const result = this.#tokenTree.isPartialOrFullWord(word.toUpperCase(), this.gameTokensUpper);
     return result.isFullWord;
   }
 
+  /**
+   * Retrieves the next possible letters in a partially completed word.
+   *
+   * @param {string} word - The partially completed word.
+   * @returns {Array<string>|null} An array of next possible letters if available, otherwise null.
+   */
   nextLettersInPartialWord(word) {
     if (!word.length) return null;
-    const partial = this.#tokenTree.getPartialWord(word.toUpperCase(), this);
+    const partial = this.#tokenTree.getPartialWordNode(word.toUpperCase(), this.gameTokensUpper);
     return partial?.nextTokens ? Array.from(partial.nextTokens.keys()) : null;
   }
 
-  getRandomWord = (length) => this.#tokenTree.getRandomWord(length, this);
+  /**
+   * Retrieves a random word of the specified length from the token tree.
+   *
+   * @param {number} length - The desired length of the random word.
+   * @returns {string} A random word of the specified length.
+   */
+  getRandomWord = (length) => this.#tokenTree.getRandomWordFromNode(length, this.gameTokensUpper);
 
+  /**
+   * Generates a random word starting with the given prefix and extending it by the specified additional length.
+   *
+   * @param {string} prefix - The initial part of the word to start with.
+   * @param {number} additionalLength - The number of additional characters to append to the prefix.
+   * @returns {string|null} A random word that starts with the given prefix and has the specified additional length, or null if the prefix is not found.
+   */
+  getRandomWordCompletion(prefix, additionalLength) {
+    prefix = prefix.toUpperCase();
+    const randSuffix = this.#tokenTree.getPartialWordNode(prefix, this.gameTokensUpper)?.
+      getRandomWordFromNode(additionalLength, this.gameTokensUpper);
+    return randSuffix ? (prefix + randSuffix) : null;
+  }
+
+  /**
+   * Retrieves the next game token for a given word.
+   *
+   * @param {string} word - The word for which to get the next game token.
+   * @returns {string} The next game token.
+   */
   getNextGameToken = (word) => LanguageTree.getNextToken(word, this.gameTokensUpper);
 
+  /**
+   * Retrieves a readable token from the gameTokensUpperToReadable map.
+   * If the token is not found in the map, it returns the original token.
+   *
+   * @param {string} tok - The token to be converted to a readable format.
+   * @returns {string} - The readable token or the original token if not found in the map.
+   */
   getReadableToken = (tok) => this.gameTokensUpperToReadable.get(tok) || tok;
 
   //
@@ -483,10 +541,20 @@ export class LanguageTree {
         word = null;
     }
 
-
     // word = 'FL*W**';
-    word = LanguageTree.replaceRandomLetters(langInstance.getRandomWord(7), 3, LanguageTree.WildcardToken);
-    console.log(`\nWildcard word ${word} completion:`, langInstance.getAllWildcardWords(word));
+    let baseWord = langInstance.getRandomWord(7);
+    word = LanguageTree.replaceRandomLetters(baseWord, 3, LanguageTree.WildcardToken);
+    console.log(`'${baseWord}' with wildcards -> '${word}' completion:`, langInstance.getAllWildcardWords(word));
+
+    word = langInstance.getRandomWord(2); // 'it';
+    console.log(`\nRandom words from '${word}':`);
+
+    //console.log(langInstance.isValidWord('its'));
+
+    for (let i = 1; i < 10; i++) {
+      let randWord = langInstance.getRandomWordCompletion(word, i);
+      console.log(`${word.length + i} letters`, randWord ?? 'N/A');
+    }
   }
 }
 
@@ -539,54 +607,121 @@ class TokenNode {
     return wordTokenNode;
   }
 
-  isPartialOrFullWord(word, langInstance) {
-    if (word.length === 0) {
-      return { isPartial: true, isFullWord: this.isWord };
+  /**
+   * Checks if the given word is a partial or full word in the language tree.
+   *
+   * @param {string} word - The word to check.
+   * @param {Set<string>} tokenSet - The set of valid tokens.
+   * @returns {Object} An object with two properties:
+   *   - {boolean} isPartial - True if the word is a partial word in the tree.
+   *   - {boolean} isFullWord - True if the word is a full word in the tree.
+   */
+  isPartialOrFullWord(word, tokenSet) {
+    let currentNode = this;
+    while (word.length > 0) {
+      const token = LanguageTree.getNextToken(word, tokenSet);
+      if (!token || !currentNode.nextTokens || !currentNode.nextTokens.has(token)) {
+        return { isPartial: false, isFullWord: false };
+      }
+      currentNode = currentNode.nextTokens.get(token);
+      word = word.slice(token.length);
     }
+    return { isPartial: true, isFullWord: currentNode.isWord };
+  }
+  //   if (word.length === 0) {
+  //     return { isPartial: true, isFullWord: this.isWord };
+  //   }
 
-    const token = LanguageTree.getNextToken(word, langInstance.langTokensUpper);
-    if (!token) return { isPartial: false, isFullWord: false };
+  //   const token = LanguageTree.getNextToken(word, langInstance.langTokensUpper);
+  //   if (!token) return { isPartial: false, isFullWord: false };
 
-    const rest = word.slice(token.length);
-    if (!this.nextTokens || !this.nextTokens.has(token)) {
-      return { isPartial: false, isFullWord: false };
+  //   const rest = word.slice(token.length);
+  //   if (!this.nextTokens || !this.nextTokens.has(token)) {
+  //     return { isPartial: false, isFullWord: false };
+  //   }
+
+  //   return this.nextTokens.get(token).isPartialOrFullWord(rest, langInstance);
+  // }
+
+  /**
+   * Retrieves the node in the language tree that corresponds to the given partial word.
+   *
+   * @param {string} word - The partial word to search for in the language tree.
+   * @param {Set<string>} tokenSet - The set of valid tokens to use for parsing the word.
+   * @returns {LanguageTree|null} The node corresponding to the partial word, or null if the word cannot be matched.
+   */
+  getPartialWordNode(word, tokenSet) {
+    let currentNode = this;
+    while (word.length > 0) {
+      const token = LanguageTree.getNextToken(word, tokenSet);
+      if (!token || !currentNode.nextTokens || !currentNode.nextTokens.has(token)) {
+        return null;
+      }
+      currentNode = currentNode.nextTokens.get(token);
+      word = word.slice(token.length);
     }
-
-    return this.nextTokens.get(token).isPartialOrFullWord(rest, langInstance);
+    return currentNode;
   }
+  //   if (word.length === 0) return this;
 
-  getPartialWord(word, langInstance) {
-    if (word.length === 0) return this;
+  //   const token = LanguageTree.getNextToken(word, langInstance.langTokensUpper);
+  //   if (!token) return null;
 
-    const token = LanguageTree.getNextToken(word, langInstance.langTokensUpper);
-    if (!token) return null;
+  //   const rest = word.slice(token.length);
+  //   if (!this.nextTokens || !this.nextTokens.has(token)) return null;
 
-    const rest = word.slice(token.length);
-    if (!this.nextTokens || !this.nextTokens.has(token)) return null;
+  //   return this.nextTokens.get(token).getPartialWordNode(rest, langInstance);
+  // }
 
-    return this.nextTokens.get(token).getPartialWord(rest, langInstance);
-  }
-
-  getRandomWord(numTokens, langInstance, word = '') {
+  getAllWordsOfLength(numTokens, tokenSet, word = '', resultWords = new Array()) {
     if (!this.nextTokens || this.nextTokens.size === 0) return null;
 
-    const options = Array.from(this.nextTokens.keys());
-    while (options.length > 0) {
-      const i = LanguageTree.getRandomRange(0, options.length);
-      const tok = options[i];
-      if (langInstance.gameTokensUpper.has(tok)) {
-        const nl = this.nextTokens.get(tok);
-        if (numTokens <= 1) {
-          return nl.isWord ? (word + tok) : null;
-        } else {
-          const recWord = nl.getRandomWord(numTokens - 1, langInstance, word + tok);
-          if (recWord !== null) return recWord;
-        }
+    for (const [token, node] of this.nextTokens) {
+      if (!tokenSet.has(token))
+        continue;
+
+      if (numTokens <= 1) {
+        if (node.isWord)
+          resultWords.push(word + token);
       }
-      options.splice(i, 1);
+      else {
+        node.getAllWordsOfLength(numTokens - 1, tokenSet, word + token, resultWords);
+      }
     }
-    return null;
+    return resultWords;
   }
+
+  getRandomWordFromNode(numTokens, tokenSet) {
+    const resultWordSet = this.getAllWordsOfLength(numTokens, tokenSet);
+    if (resultWordSet?.length) {
+      const rand = LanguageTree.getRandomRange(0, resultWordSet.length);
+      return resultWordSet[rand];
+    }
+    else 
+      return null;
+  }
+
+  // Error - randomized in every step leading to exclusion of words
+  // getRandomWordFromNode(numTokens, tokenSet, word = '') {
+  //   if (!this.nextTokens || this.nextTokens.size === 0) return null;
+
+  //   const options = Array.from(this.nextTokens.keys());
+  //   while (options.length > 0) {
+  //     const i = LanguageTree.getRandomRange(0, options.length);
+  //     const tok = options[i];
+  //     if (tokenSet.has(tok)) {
+  //       const nl = this.nextTokens.get(tok);
+  //       if (numTokens <= 1) {
+  //         return nl.isWord ? (word + tok) : null;
+  //       } else {
+  //         const recWord = nl.getRandomWordFromNode(numTokens - 1, tokenSet, word + tok);
+  //         if (recWord !== null) return recWord;
+  //       }
+  //     }
+  //     options.splice(i, 1);
+  //   }
+  //   return null;
+  // }
 
   serialize() {
     if (!this.nextTokens) return '';
