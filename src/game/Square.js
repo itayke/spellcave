@@ -10,6 +10,8 @@ export class Square extends Phaser.GameObjects.Container {
   cave;
   textObj;
 
+  debugText;
+
   constructor(scene, cave, row, column, token) {
     super(scene,
       Math.round(column * cave.squareSize),
@@ -42,9 +44,30 @@ export class Square extends Phaser.GameObjects.Container {
       .setLetterSpacing(Cave.FontSpacing)
       .setOrigin(0.5)
       .setDepth(100);
-
     this.add(this.textObj);
+
+    // Debug text
+    this.debugText = new Phaser.GameObjects.Text(scene,
+      Math.round(cave.squareSize / 2),
+      Math.round(cave.squareSize * 0.85),
+      `${row},${column}`, {
+      fontFamily: Cave.FontName,
+      color: '#FF0000',
+      fontSize: this.cave.fontSize / 4,
+      align: 'center'
+    })
+      .setLetterSpacing(Cave.FontSpacing)
+      .setOrigin(0.5)
+      .setDepth(100)
+      .setVisible(false);
+    this.add(this.debugText);
+
     if (GameManager.Debug >= 2)
       console.log(`Square ${row},${column} created with token ${token}`);
+  }
+
+  setDebugText(text) {
+    this.debugText.setVisible(!!text);
+    this.debugText.setText(text);
   }
 }

@@ -25,9 +25,9 @@ export class LanguageTree {
 
   #initialized = false;
   #tokenTree = null;
-  #frequencies = null;
-  #frequenciesBase = null;
-  #frequenciesTemp = null;
+  // #frequencies = null;
+  #tokenFrequencies = null;
+  // #frequenciesTemp = null;
   #langDataJSON = null;
 
   static #Instance = null;
@@ -124,20 +124,25 @@ export class LanguageTree {
   async readProbData(langCode, offline) {
     try {
       const probData = await LanguageTree.readFileJSON(`${LanguageTree.LangProbFilePrefix}${langCode}.json`, offline);
-      this.#frequenciesBase = new Map();
-
+      this.#tokenFrequencies = new Map();
       let baseTotalFreq = 0;
       for (const [key, value] of Object.entries(probData)) {
-        this.#frequenciesBase.set(key, value);
+        this.#tokenFrequencies.set(key, value);
         baseTotalFreq += value;
       }
 
+      // Debug
+      // let baseTotalFreq = 1;
+      // this.#tokenFrequencies = new Map();
+      // this.#tokenFrequencies.set('I', 0.5);
+      // this.#tokenFrequencies.set('QU', 0.5);
+
       if (GameManager.Debug)
-        console.log('LetterTree Base frequencies:', this.#frequenciesBase);
+        console.log('LetterTree Base frequencies:', this.#tokenFrequencies);
 
       // Normalize frequencies
-      for (const [key, value] of this.#frequenciesBase) {
-        this.#frequenciesBase.set(key, value / baseTotalFreq);
+      for (const [key, value] of this.#tokenFrequencies) {
+        this.#tokenFrequencies.set(key, value / baseTotalFreq);
       }
     } catch (error) {
       console.error('Error reading probability data:', error);
@@ -161,90 +166,126 @@ export class LanguageTree {
     }
   }
 
-  finalizeProbs(extraProbs) {
-    this.#frequencies = new Map(this.#frequenciesBase);
-    let totalFreq = 1.0;
+  // finalizeProbs(extraProbs) {
+  //   this.#frequencies = new Map(this.#frequenciesBase);
+  //   let totalFreq = 1.0;
 
-    for (const [key, value] of Object.entries(extraProbs)) {
-      this.#frequencies.set(key, value);
-      totalFreq += value;
-    }
+  //   for (const [key, value] of Object.entries(extraProbs)) {
+  //     this.#frequencies.set(key, value);
+  //     totalFreq += value;
+  //   }
 
-    // Normalize all frequencies
-    for (const [key, value] of this.#frequencies) {
-      this.#frequencies.set(key, value / totalFreq);
-    }
+  //   // Normalize all frequencies
+  //   for (const [key, value] of this.#frequencies) {
+  //     this.#frequencies.set(key, value / totalFreq);
+  //   }
 
-    // Initialize temporary frequencies
-    this.#frequenciesTemp = new Map();
-    for (const [key, value] of this.#frequencies) {
-      this.#frequenciesTemp.set(key, 0);
-    }
-  }
+  //   // Initialize temporary frequencies
+  //   this.#frequenciesTemp = new Map();
+  //   for (const [key, value] of this.#frequencies) {
+  //     this.#frequenciesTemp.set(key, 0);
+  //   }
+  // }
 
-  randomizeToken(baseOnly = false, randomFunc) {
+  /**
+   * Randomizes a token based on the provided random function or the default random function.
+   *
+   * @param {Function} randomFunc - A function that generates a random number between 0 and 1. If not provided, the default random function is used.
+   * @returns {string|null} - The selected token based on the random value, or null if no token is selected.
+   */
+  randomizeToken(randomFunc) {
     randomFunc ??= LanguageTree.defaultRandomFunc;
-
     let rando = randomFunc();
-    const freqs = baseOnly ? this.#frequenciesBase : (this.#frequencies ?? this.#frequenciesBase);
-    
-    for (const [key, value] of freqs) {
+    for (const [key, value] of this.#tokenFrequencies) {
       if (rando < value) return key;
       rando -= value;
     }
     return null;
   }
 
-  #addTempTokens(probs, negProbs, totalTmpProbs, mul = 1.0, tokenRandom = 0.0) {
-    for (const [key, value] of Object.entries(probs)) {
-      let negProb = 0;
-      let prob = value === 0 ? 0 : (lerp(value, 1, tokenRandom) * mul);
+  /**
+   * Randomizes token probabilities modified by extra probabilities and a factor.
+   *
+   * @param {Map<string, number>} extraProbs - A map of tokens to their extra probability factors.
+   * @param {number} factor - A factor to scale the negative probabilities.
+   * @param {function} [randomFunc] - An optional random function to use. Defaults to LanguageTree.defaultRandomFunc.
+   * @returns {string|null} - The selected token based on the randomized probabilities, or null if no token is selected.
+   */
+  randomizeTokenExtraProbs(extraProbs, factor, randomFunc) {
+    randomFunc ??= LanguageTree.defaultRandomFunc;
 
-      if (negProbs?.has(key)) {
-        negProb = negProbs.get(key);
-        prob *= (1 - negProb);
-      }
-
-      totalTmpProbs += prob;
-      this.#frequenciesTemp.set(key, prob);
+    let freqCopy = new Map(this.#tokenFrequencies);
+    let totalFreq = 1.0;
+    for (const [token, extraProb] of extraProbs) {
+      let oldValue = freqCopy.get(token);
+      let newValue = oldValue * Math.max(1 + extraProb * factor, 0);
+      // console.log(token, extraProb, oldValue, newValue);
+      totalFreq += newValue - oldValue;
+      freqCopy.set(token, newValue);
     }
-    return totalTmpProbs;
+    // console.log('Total freq:', totalFreq);
+    if (totalFreq) {
+      let rando = randomFunc() * totalFreq;
+      for (const [key, value] of freqCopy) {
+        if (rando < value) return key;
+        rando -= value;
+      }
+    }
+    // Fall back to default randomization
+    return this.randomizeToken(randomFunc);
   }
+
+
+  // #addTempTokens(probs, negProbs, totalTmpProbs, mul = 1.0, tokenRandom = 0.0) {
+  //   for (const [key, value] of Object.entries(probs)) {
+  //     let negProb = 0;
+  //     let prob = value === 0 ? 0 : (lerp(value, 1, tokenRandom) * mul);
+
+  //     if (negProbs?.has(key)) {
+  //       negProb = negProbs.get(key);
+  //       prob *= (1 - negProb);
+  //     }
+
+  //     totalTmpProbs += prob;
+  //     this.#frequenciesTemp.set(key, prob);
+  //   }
+  //   return totalTmpProbs;
+  // }
 
   // Queries
 
-  randomizeTokenWithProbabilities(negProbs, addlTokens, baseTokensOnly = false, tokenRandom = 0.0, randomFunc) {
-    randomFunc ??= LanguageTree.defaultRandomFunc;
+  // randomizeTokenWithProbabilities(negProbs, addlTokens, baseTokensOnly = false, tokenRandom = 0.0, randomFunc) {
+  //   randomFunc ??= LanguageTree.defaultRandomFunc;
 
-    let totalTmpProbs = 0;
-    this.#frequenciesTemp.clear();
+  //   let totalTmpProbs = 0;
+  //   this.#frequenciesTemp.clear();
 
-    totalTmpProbs = this.#addTempTokens(
-      baseTokensOnly ? this.#frequenciesBase : this.#frequencies,
-      negProbs,
-      totalTmpProbs,
-      1.0,
-      tokenRandom
-    );
+  //   totalTmpProbs = this.#addTempTokens(
+  //     baseTokensOnly ? this.#frequenciesBase : this.#frequencies,
+  //     negProbs,
+  //     totalTmpProbs,
+  //     1.0,
+  //     tokenRandom
+  //   );
 
-    if (!baseTokensOnly && addlTokens) {
-      totalTmpProbs = this.#addTempTokens(
-        addlTokens,
-        negProbs,
-        totalTmpProbs,
-        totalTmpProbs,
-        tokenRandom
-      );
-    }
+  //   if (!baseTokensOnly && addlTokens) {
+  //     totalTmpProbs = this.#addTempTokens(
+  //       addlTokens,
+  //       negProbs,
+  //       totalTmpProbs,
+  //       totalTmpProbs,
+  //       tokenRandom
+  //     );
+  //   }
 
-    let rando = randomFunc() * totalTmpProbs;
-    for (const [key, prob] of this.#frequenciesTemp) {
-      if (rando < prob) return key;
-      rando -= prob;
-    }
+  //   let rando = randomFunc() * totalTmpProbs;
+  //   for (const [key, prob] of this.#frequenciesTemp) {
+  //     if (rando < prob) return key;
+  //     rando -= prob;
+  //   }
 
-    throw new Error('No letters available');
-  }
+  //   throw new Error('No letters available');
+  // }
 
   getAllWildcardPartialWords(word, results = new Set()) {
     const wildIdx = word.indexOf(LanguageTree.WildcardToken);
