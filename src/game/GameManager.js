@@ -1,6 +1,6 @@
-import { LanguageTree } from './LanguageTree';
-import { FontManager } from './FontManager';
-import { Cave } from './Cave';
+import { LanguageTree } from './LanguageTree.js';
+import { FontManager } from './FontManager.js';
+import { Cave } from './Cave.js';
 
 // Singleton class that manages the game
 export class GameManager {

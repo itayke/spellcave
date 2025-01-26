@@ -1,8 +1,9 @@
 import fs from 'fs/promises';
-import { Game } from 'phaser';
-import { GameManager } from './GameManager';
 
 export class LanguageTree {
+
+  static Debug = 1;
+
   // Constants
   static PublicFilePath = 'public/';
   static LangDataFilePath = 'assets/langData/';
@@ -25,10 +26,14 @@ export class LanguageTree {
 
   #initialized = false;
   #tokenTree = null;
-  // #frequencies = null;
-  #tokenFrequencies = null;
-  // #frequenciesTemp = null;
-  #langDataJSON = null;
+
+  // Object with Token frequencies by themselves, and per each token pair: {
+  //   '_': { 'A': 44, 'B': 5, 'C': 3, '#': 52 },  // Frequencies for each token, with # is frequencies total
+  //   'A': { 'A': 1, 'B': 6, 'C': 3, '#': 10 },  // Frequencies for A paired with other tokens
+  //   'B': { 'A': 3, 'B': 3, 'C': 8, '#': 14 },  // Frequencies for B paired with other tokens
+  // }
+  tokenProbabilities = null;
+  langConfigJSON = null;
 
   static #Instance = null;
 
@@ -66,11 +71,11 @@ export class LanguageTree {
 
   async readLangConfig(langCode, offline) {
     try {
-      this.#langDataJSON = await LanguageTree.readFileJSON(`${LanguageTree.LangConfigFilePrefix}${langCode}.json`, offline);
-      await this.processLangConfig(this.#langDataJSON);
+      this.langConfigJSON = await LanguageTree.readFileJSON(`${LanguageTree.LangConfigFilePrefix}${langCode}.json`, offline);
+      await this.processLangConfig(this.langConfigJSON);
 
-      if (GameManager.Debug)
-        console.log('LanguageTree config:', this.#langDataJSON);
+      if (LanguageTree.Debug)
+        console.log('LanguageTree config:', this.langConfigJSON);
 
     } catch (error) {
       console.error('Error reading language data:', error);
@@ -123,27 +128,9 @@ export class LanguageTree {
 
   async readProbData(langCode, offline) {
     try {
-      const probData = await LanguageTree.readFileJSON(`${LanguageTree.LangProbFilePrefix}${langCode}.json`, offline);
-      this.#tokenFrequencies = new Map();
-      let baseTotalFreq = 0;
-      for (const [key, value] of Object.entries(probData)) {
-        this.#tokenFrequencies.set(key, value);
-        baseTotalFreq += value;
-      }
-
-      // Debug
-      // let baseTotalFreq = 1;
-      // this.#tokenFrequencies = new Map();
-      // this.#tokenFrequencies.set('I', 0.5);
-      // this.#tokenFrequencies.set('QU', 0.5);
-
-      if (GameManager.Debug)
-        console.log('LetterTree Base frequencies:', this.#tokenFrequencies);
-
-      // Normalize frequencies
-      for (const [key, value] of this.#tokenFrequencies) {
-        this.#tokenFrequencies.set(key, value / baseTotalFreq);
-      }
+      this.tokenProbabilities = await LanguageTree.readFileJSON(`${LanguageTree.LangProbFilePrefix}${langCode}.json`, offline);
+      if (LanguageTree.Debug)
+        console.log('LetterTree Base frequencies:', this.tokenProbabilities);
     } catch (error) {
       console.error('Error reading probability data:', error);
       throw error;
@@ -155,7 +142,7 @@ export class LanguageTree {
       const text = await LanguageTree.readFile(`${LanguageTree.LangTreeFilePrefix}${langCode}.txt`, offline);
       LanguageTree.GeneralData.letterTreeSize = text.length;
 
-      if (GameManager.Debug)
+      if (LanguageTree.Debug)
         console.log('LetterTree data:', LanguageTree.GeneralData);
 
       this.#tokenTree = new TokenNode();
@@ -195,8 +182,61 @@ export class LanguageTree {
    */
   randomizeToken(randomFunc) {
     randomFunc ??= LanguageTree.defaultRandomFunc;
-    let rando = randomFunc();
-    for (const [key, value] of this.#tokenFrequencies) {
+    let tokenProbabilitiesBase = this.tokenProbabilities['_'];
+    let rando = randomFunc() * tokenProbabilitiesBase.total;
+    for (const [key, value] of Object.entries(tokenProbabilitiesBase.probs)) {
+      if (rando < value) return key;
+      rando -= value;
+    }
+    return null;
+  }
+
+
+  /**
+   * Randomizes a token based on previous tokens.
+   *
+   * @param {string[]} prevTokens - An array of previous tokens.
+   * @param {number} [pairWeight=1] - The weight to apply to token based on the previous token.
+   * @param {number} [tokenRepeatWeight=1] - The weight to apply to prevent repeated tokens.
+   * @param {function} [randomFunc=null] - A function that generates a random number between 0 and 1. Defaults to LanguageTree.defaultRandomFunc.
+   * @returns {string|null} - The selected token or null if no token is selected.
+   */
+  randomizeTokenFromPrevious(prevTokens, pairWeight = 1, tokenRepeatWeight = 1, languageTokenVsRandomProbabilityScale = 1, randomFunc = null) {
+    randomFunc ??= LanguageTree.defaultRandomFunc;
+
+    let tokenProbabilitiesBase = this.tokenProbabilities['_'];
+    let total = 0;
+    let probs = { };
+
+    let entries = Object.entries(tokenProbabilitiesBase.probs);
+    let averageProb = tokenProbabilitiesBase.total / entries.length;
+    for (let [tok, prob] of entries) {
+      let val = averageProb + (prob - averageProb) * languageTokenVsRandomProbabilityScale;
+      probs[tok] = val;
+      total += val;
+    }
+
+    if (prevTokens?.length) {
+      // Add tokens pair lookup probs
+      prevTokens.forEach(token => {
+        for (let [pairTok, pairProb] of Object.entries(this.tokenProbabilities[token].probs)) {
+          let prob = pairProb * pairWeight;
+          probs[pairTok] += prob;
+          total += prob;
+        }
+      });
+      // Remove probabilities from same tokens
+      prevTokens.forEach(token => {
+        let oldValue = probs[token];
+        let newValue = oldValue * tokenRepeatWeight;
+        let delta = newValue - oldValue;
+        probs[token] = newValue;
+        total += delta;
+      });
+    }
+
+    let rando = randomFunc() * total;
+    for (const [key, value] of Object.entries(probs)) {
       if (rando < value) return key;
       rando -= value;
     }
@@ -214,7 +254,7 @@ export class LanguageTree {
   randomizeTokenExtraProbs(extraProbs, factor, randomFunc) {
     randomFunc ??= LanguageTree.defaultRandomFunc;
 
-    let freqCopy = new Map(this.#tokenFrequencies);
+    let freqCopy = new Map(this.tokenProbabilities);
     let totalFreq = 1.0;
     for (const [token, extraProb] of extraProbs) {
       let oldValue = freqCopy.get(token);
@@ -556,10 +596,26 @@ export class LanguageTree {
       .map(word => word.trim().toUpperCase())
       .filter(word => word.length >= LanguageTree.MinWordLength);
 
-    const probabilities = new Map();
+    // Initialize probabilities, with '_' for all tokens by themselves
+
+    const initializeProbabilities = () => {
+      const probabilitiesDict = {};
+      const probabilitiesData = { total: 0, probs: probabilitiesDict };
+      for (let token of langInstance.gameTokensUpper)
+        probabilitiesDict[token] = 0;
+      return probabilitiesData;
+    };
+
+    // Initialize with all sorted tokens at 0
+    const probabilitiesBase = initializeProbabilities();
+    langInstance.tokenProbabilities = { '_': probabilitiesBase };
+    for (let token of langInstance.gameTokensUpper)
+      langInstance.tokenProbabilities[token] = initializeProbabilities();
+
     const tree = new TokenNode();
 
     words.forEach(word => {
+      let prevToken;
       // Create words for all tokens, e.g QUEST would become Q-U-E-S-T and QU-E-S-T
       tree.addWord(word, [ langInstance.langTokensUpper, langInstance.gameOnlyTokensUpper ]);
 
@@ -567,14 +623,27 @@ export class LanguageTree {
       for (let i = 0, tok;
         tok = LanguageTree.getNextToken(word.slice(i), langInstance.gameTokensUpper);
         i += tok.length) {
-        probabilities[tok] = (probabilities[tok] ?? 0) + 1;
+        ++probabilitiesBase.probs[tok];
+        ++probabilitiesBase.total;
+
+        if (prevToken) {
+          let probsPrevToken = langInstance.tokenProbabilities[prevToken];
+          ++probsPrevToken.probs[tok];
+          ++probsPrevToken.total;
+          if (prevToken !== tok) {
+            let probsTok = langInstance.tokenProbabilities[tok];
+            ++probsTok.probs[prevToken];
+            ++probsTok.total;
+          }
+        }
+        prevToken = tok;
       }
     });
 
     return {
       numWords: words.length,
       treeData: tree.serialize(),
-      probabilities
+      probabilities: langInstance.tokenProbabilities
     };
   }
 
@@ -639,21 +708,6 @@ class TokenNode {
       }
     });
   }
-
-  //   // Fork for game only next token (e.g. QU)
-  //   const gameToken = LanguageTree.getNextToken(word, langInstance.gameOnlyTokensUpper);
-  //   if (!gameToken)
-  //     return;
-
-  //   tokenNode = this.#addWordToken(gameToken);
-  //   restStr = word.slice(gameToken.length);
-  //   if (restStr.length > 0) {
-  //     tokenNode.addWord(restStr, langInstance);
-  //   } else {
-  //     tokenNode.isWord = true;
-  //     ++LanguageTree.generalData.numWords;
-  //   }
-  // }
 
   #addWordToken(token) {
     this.nextTokens ??= new Map();

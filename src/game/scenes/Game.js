@@ -19,7 +19,7 @@ export class Game extends Scene {
 
   preload() {
     this.load.setPath('assets/');
-    this.load.image(Cave.SquareImageName, 'squareBg.png');
+    this.load.image(Cave.SquareImageName, Cave.SquareImageFile);
   }
 
   create() {

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
-import { Cave } from './Cave';
-import { GameManager } from './GameManager';
-import { LanguageTree } from './LanguageTree';
+import { Cave } from './Cave.js';
+import { GameManager } from './GameManager.js';
+import { LanguageTree } from './LanguageTree.js';
 
 // Square in the cave, with origin at the top-left corner
 export class Square extends Phaser.GameObjects.Container {

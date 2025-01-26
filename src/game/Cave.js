@@ -1,26 +1,42 @@
 import Phaser from 'phaser';
-import { Square } from './Square';
-import { GameManager } from './GameManager';
-import { HashManager } from './HashManager';
-import { LanguageTree } from './LanguageTree';
+import { Square } from './Square.js';
+import { GameManager } from './GameManager.js';
+import { HashManager } from './HashManager.js';
+import { LanguageTree } from './LanguageTree.js';
 
 // A board of Squares
 export class Cave extends Phaser.GameObjects.Container {
 
   static FontName = 'CaveFont';
   static FontFile = 'MuseoSans-500.otf';
-  static FontSpacing = -2.5;
+  // static FontFile = 'OdibeeSans-Regular.ttf';
+  
+  // static FontFile = 'SmoochSans-Medium.ttf';
+  // static FontSizeFactor = 0.65;
+  // static FontSpacing = -2.5;
 
-  static FontColor = '#000000';
+  // static FontFile = 'Oswald-Regular.ttf';//'Oswald-Light.ttf';
+  // static FontSizeFactor = 0.5;
+  
+  static FontFile = 'PathwayGothicOne-Regular.ttf';
   static FontSizeFactor = 0.55;
+  
+  static FontSpacing = 0;
+  static FontColor = '#000000';
   static ExtraRows = 8;
 
   // Prevents the same token from appearing in adjacent squares. 
-  // The closer the value to 1.0, the less likely it is to repeat. 
-  static PreventTokenRepeatFactor = 0.6;
-  static PreventTokenRepeatUseTwoRings = true;
+  // The closer the value to 0, the less likely it is to repeat. 
+  static AdjacentTokenRepeatWeight = 0.35;
+  // Weight for token proximity probability based on previous tokens
+  // 1.0 is same as general, more is prefer probabilities based on previous tokens
+  static PreviousTokenLookupWeight = 1.5;
+  // Value 0..1 representing the use of random (0.0) through language probabilites (1.0)
+  static LanguageTokenVsRandomProbabilityScale = 0.8;
+  // static PreventTokenRepeatUseTwoRings = true;
 
   static SquareImageName = 'square';
+  static SquareImageFile = 'squareBg3.png';
   
   #randomSeed4;
   #randomTokenFunction;
@@ -66,10 +82,16 @@ export class Cave extends Phaser.GameObjects.Container {
 
   createSquares() {
     const languageTree = LanguageTree.GetInstance();
-    let extraProbs = new Map();
-    const adjustExtraProbs = (y, x, extraProb) => {
+    // let extraProbs = new Map();
+    // const adjustExtraProbs = (y, x, extraProb) => {
+    //   let tok = this.getTokenAt(y, x);
+    //   if (tok) extraProbs.set(tok, (extraProbs.get(tok) ?? 0) + extraProb);
+    // };
+
+    let pairLookupList;
+    const addTokenForPairLookup = (y, x) => {
       let tok = this.getTokenAt(y, x);
-      if (tok) extraProbs.set(tok, (extraProbs.get(tok) ?? 0) + extraProb);
+      if (tok) pairLookupList.push(tok);
     };
 
     for (let row = this.minRow; row < this.maxRow; row++) {
@@ -77,32 +99,47 @@ export class Cave extends Phaser.GameObjects.Container {
       this.squares.set(row, lineSquares);
 
       for (let column = 0; column < this.columns; column++) {
-        // let token = languageTree.randomizeToken(this.randomFunction);
+        // let token = languageTree.randomizeToken(this.#randomTokenFunction);
 
-        extraProbs.clear();
+        pairLookupList = [];
+        addTokenForPairLookup(row - 1, column - 1);
+        addTokenForPairLookup(row - 1, column);
+        addTokenForPairLookup(row - 1, column + 1);
+        addTokenForPairLookup(row, column - 1);    
 
-        // Adjust extra probabilities based on the tokens in the previous row
-        adjustExtraProbs(row - 1, column - 1, -1);
-        adjustExtraProbs(row - 1, column, -1);
-        adjustExtraProbs(row - 1, column + 1, -1);
-        adjustExtraProbs(row, column - 1, -1);    
+        let token = languageTree.randomizeTokenFromPrevious(
+          pairLookupList,
+          Cave.PreviousTokenLookupWeight,
+          Cave.AdjacentTokenRepeatWeight,
+          Cave.LanguageTokenVsRandomProbabilityScale,
+          this.#randomTokenFunction
+        );
+
+        // extraProbs.clear();
+
+        // // Adjust extra probabilities based on the tokens in the previous row
+        // adjustExtraProbs(row - 1, column - 1, -1);
+        // adjustExtraProbs(row - 1, column, -1);
+        // adjustExtraProbs(row - 1, column + 1, -1);
+        // adjustExtraProbs(row, column - 1, -1);    
         
-        // Second ring
-        if (Cave.PreventTokenRepeatUseTwoRings) {
-          adjustExtraProbs(row, column - 2, -0.5);
-          adjustExtraProbs(row - 1, column - 2, -0.5);
-          adjustExtraProbs(row - 2, column - 2, -0.5);
-          adjustExtraProbs(row - 2, column - 1, -0.5);
-          adjustExtraProbs(row - 2, column, -0.5);
-          adjustExtraProbs(row - 2, column, -0.5);
-          adjustExtraProbs(row - 2, column + 1, -0.5);
-          adjustExtraProbs(row - 2, column + 2, -0.5);
-        }
+        // // Second ring
+        // if (Cave.PreventTokenRepeatUseTwoRings) {
+        //   adjustExtraProbs(row, column - 2, -0.5);
+        //   adjustExtraProbs(row - 1, column - 2, -0.5);
+        //   adjustExtraProbs(row - 2, column - 2, -0.5);
+        //   adjustExtraProbs(row - 2, column - 1, -0.5);
+        //   adjustExtraProbs(row - 2, column, -0.5);
+        //   adjustExtraProbs(row - 2, column, -0.5);
+        //   adjustExtraProbs(row - 2, column + 1, -0.5);
+        //   adjustExtraProbs(row - 2, column + 2, -0.5);
+        // }
 
-        let token = languageTree.randomizeTokenExtraProbs(extraProbs, Cave.PreventTokenRepeatFactor, this.#randomTokenFunction);
+        // let token = languageTree.randomizeTokenExtraProbs(extraProbs, Cave.PreventTokenRepeatFactor, this.#randomTokenFunction);
+        
         let square = new Square(this.scene, this, row, column, token);
 
-        // square.setDebugText(JSON.stringify(Object.fromEntries(extraProbs)));
+        // square.setDebugText(pairLookupList.join());
 
         this.add(square);
         lineSquares.push(square);
