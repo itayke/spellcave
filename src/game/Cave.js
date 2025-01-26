@@ -25,15 +25,14 @@ export class Cave extends Phaser.GameObjects.Container {
   static FontColor = '#000000';
   static ExtraRows = 8;
 
+  // Value 0..1 representing the use of random (0.0) through language probabilites (1.0)
+  static LanguageTokenVsRandomProbabilityScale = 0.8;
+  // Weight of standard/random probability compared to token probability based on previous tokens
+  // 1.0 to use the same weight, 0.0 is to only use previous token probabilities
+  static StandardProbabilityWeight = 0.5;
   // Prevents the same token from appearing in adjacent squares. 
   // The closer the value to 0, the less likely it is to repeat. 
   static AdjacentTokenRepeatWeight = 0.35;
-  // Weight for token proximity probability based on previous tokens
-  // 1.0 is same as general, more is prefer probabilities based on previous tokens
-  static PreviousTokenLookupWeight = 1.5;
-  // Value 0..1 representing the use of random (0.0) through language probabilites (1.0)
-  static LanguageTokenVsRandomProbabilityScale = 0.8;
-  // static PreventTokenRepeatUseTwoRings = true;
 
   static SquareImageName = 'square';
   static SquareImageFile = 'squareBg3.png';
@@ -88,10 +87,10 @@ export class Cave extends Phaser.GameObjects.Container {
     //   if (tok) extraProbs.set(tok, (extraProbs.get(tok) ?? 0) + extraProb);
     // };
 
-    let pairLookupList;
+    let prevTokensList;
     const addTokenForPairLookup = (y, x) => {
       let tok = this.getTokenAt(y, x);
-      if (tok) pairLookupList.push(tok);
+      if (tok) prevTokensList.push(tok);
     };
 
     for (let row = this.minRow; row < this.maxRow; row++) {
@@ -101,15 +100,15 @@ export class Cave extends Phaser.GameObjects.Container {
       for (let column = 0; column < this.columns; column++) {
         // let token = languageTree.randomizeToken(this.#randomTokenFunction);
 
-        pairLookupList = [];
+        prevTokensList = [];
         addTokenForPairLookup(row - 1, column - 1);
         addTokenForPairLookup(row - 1, column);
         addTokenForPairLookup(row - 1, column + 1);
-        addTokenForPairLookup(row, column - 1);    
+        // addTokenForPairLookup(row, column - 1);    
 
         let token = languageTree.randomizeTokenFromPrevious(
-          pairLookupList,
-          Cave.PreviousTokenLookupWeight,
+          prevTokensList,
+          Cave.StandardProbabilityWeight,
           Cave.AdjacentTokenRepeatWeight,
           Cave.LanguageTokenVsRandomProbabilityScale,
           this.#randomTokenFunction

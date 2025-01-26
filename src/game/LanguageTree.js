@@ -196,45 +196,46 @@ export class LanguageTree {
    * Randomizes a token based on previous tokens.
    *
    * @param {string[]} prevTokens - An array of previous tokens.
-   * @param {number} [pairWeight=1] - The weight to apply to token based on the previous token.
+   * @param {number} [standardProbabilityWeight=1] - The weight to apply to token based on the previous token.
    * @param {number} [tokenRepeatWeight=1] - The weight to apply to prevent repeated tokens.
    * @param {function} [randomFunc=null] - A function that generates a random number between 0 and 1. Defaults to LanguageTree.defaultRandomFunc.
    * @returns {string|null} - The selected token or null if no token is selected.
    */
-  randomizeTokenFromPrevious(prevTokens, pairWeight = 1, tokenRepeatWeight = 1, languageTokenVsRandomProbabilityScale = 1, randomFunc = null) {
+  randomizeTokenFromPrevious(prevTokens, standardProbabilityWeight = 1, tokenRepeatWeight = 1, languageTokenVsRandomProbabilityScale = 1, randomFunc = null) {
+    if (!(prevTokens?.length))
+      return this.randomizeToken(randomFunc);
+
     randomFunc ??= LanguageTree.defaultRandomFunc;
 
     let tokenProbabilitiesBase = this.tokenProbabilities['_'];
     let total = 0;
-    let probs = { };
+    let probs = {};
 
     let entries = Object.entries(tokenProbabilitiesBase.probs);
     let averageProb = tokenProbabilitiesBase.total / entries.length;
     for (let [tok, prob] of entries) {
-      let val = averageProb + (prob - averageProb) * languageTokenVsRandomProbabilityScale;
+      let val = (averageProb + (prob - averageProb) * languageTokenVsRandomProbabilityScale) * standardProbabilityWeight;
       probs[tok] = val;
       total += val;
     }
 
-    if (prevTokens?.length) {
-      // Add tokens pair lookup probs
-      prevTokens.forEach(token => {
-        for (let [pairTok, pairProb] of Object.entries(this.tokenProbabilities[token].probs)) {
-          let prob = pairProb * pairWeight;
-          probs[pairTok] += prob;
-          total += prob;
-        }
-      });
-      // Remove probabilities from same tokens
-      prevTokens.forEach(token => {
-        let oldValue = probs[token];
-        let newValue = oldValue * tokenRepeatWeight;
-        let delta = newValue - oldValue;
-        probs[token] = newValue;
-        total += delta;
-      });
-    }
+    // Add tokens pair lookup probs
+    prevTokens.forEach(token => {
+      for (let [pairTok, pairProb] of Object.entries(this.tokenProbabilities[token].probs)) {
+        probs[pairTok] += pairProb;
+        total += pairProb;
+      }
+    });
+    // Remove probabilities from same tokens
+    prevTokens.forEach(token => {
+      let oldValue = probs[token];
+      let newValue = oldValue * tokenRepeatWeight;
+      let delta = newValue - oldValue;
+      probs[token] = newValue;
+      total += delta;
+    });
 
+    // Randomize
     let rando = randomFunc() * total;
     for (const [key, value] of Object.entries(probs)) {
       if (rando < value) return key;
@@ -630,11 +631,13 @@ export class LanguageTree {
           let probsPrevToken = langInstance.tokenProbabilities[prevToken];
           ++probsPrevToken.probs[tok];
           ++probsPrevToken.total;
-          if (prevToken !== tok) {
-            let probsTok = langInstance.tokenProbabilities[tok];
-            ++probsTok.probs[prevToken];
-            ++probsTok.total;
-          }
+
+          // Also do reverse
+          // if (prevToken !== tok) {
+          //   let probsTok = langInstance.tokenProbabilities[tok];
+          //   ++probsTok.probs[prevToken];
+          //   ++probsTok.total;
+          // }
         }
         prevToken = tok;
       }
