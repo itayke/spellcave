@@ -29,7 +29,7 @@ const config = {
   type: Phaser.AUTO,
   multiTexture: true,
   //antialias: true,
-  // pixelArt: true,
+  pixelArt: false,
   width: GameSize.x,
   height: GameSize.y,
   zoom: Zoom,

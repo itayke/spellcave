@@ -19,7 +19,8 @@ export class Game extends Scene {
 
   preload() {
     this.load.setPath('assets/');
-    this.load.image(Cave.SquareImageName, Cave.SquareImageFile);
+    this.load.image(Cave.SquareImage.name, Cave.SquareImage.file);
+    this.load.image(Cave.CaveOverlayGradient.name, Cave.CaveOverlayGradient.file);
   }
 
   create() {
@@ -44,14 +45,6 @@ export class Game extends Scene {
   complete() {
     if (GameManager.Debug)
       console.log('Assets loaded');
-    
-    // this.add.text(512, 384, LanguageTree.GetInstance().getRandomWord(10), {
-    //   fontFamily: 'NotoSans', fontSize: 80, color: '#000000',
-    //   //stroke: '#000000', strokeThickness: 8,
-    //   align: 'center'
-    // })
-    //   .setOrigin(0.5)
-    //   .setDepth(100);
     
     this.cave = new Cave(this, this.gameContainer);
     this.gameContainer.add(this.cave);
