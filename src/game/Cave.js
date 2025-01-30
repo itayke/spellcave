@@ -7,9 +7,7 @@ import { LanguageTree } from './LanguageTree.js';
 // A board of Squares
 export class Cave extends Phaser.GameObjects.Container {
 
-  // Padding on sides
-  static HorizPadding = 8;
-
+  static Padding = { left: 8, right: 8, top: 16 };
   static FontName = 'CaveFont';
 
   // static FontFile = 'MuseoSans-500.otf';
@@ -30,10 +28,10 @@ export class Cave extends Phaser.GameObjects.Container {
   static ExtraRows = 8;
 
   static BgTint = Cave.ParseColorFromString('#ffffff');
-  static BgTintSelectable = Cave.ParseColorFromString('#f6f5a3');
+  static BgTintSelectable = Cave.ParseColorFromString('#f9f8b5');
   //static BgTintSelected = Cave.ParseColorFromString('#91deeb');
   static BgTintSelected = Cave.ParseColorFromString('#f2b6ff');
-  static BgTintSelectedValid = Cave.ParseColorFromString('#bfeb91');
+  static BgTintSelectedValid = Cave.ParseColorFromString('#bdf680');
 
   static SquareScaleSelected = 1.26;
 
@@ -46,11 +44,8 @@ export class Cave extends Phaser.GameObjects.Container {
   // The closer the value to 0, the less likely it is to repeat. 
   static AdjacentTokenRepeatWeight = 0.35;
 
-  static GradientVerticalRatio = 0.2;
-  static GradientAlpha = 0.5;
-
   static SquareImage = { name: 'square', file: 'squareBg3.png' };
-  static CaveOverlayGradient = { name: 'overlayGradient', file: 'darkenGradient.png' };
+  static SquareOutlineImage = { name: 'squareBgOutline', file: 'squareBgOutline.png' };
   
   #randomSeed4;
   #randomTokenFunction;
@@ -74,53 +69,61 @@ export class Cave extends Phaser.GameObjects.Container {
   selectableSquares = new Set();
   // Updated this move
   squaresPendingUpdate = new Set();
+  // Current word (list of Square objs)
+  typedWordSquares = [];
+  typedWordString;
 
   // Size of each square in pixels, based on the game size
   squareSize;
   // Size of the font in pixels, based on square size
   fontSize;
 
+  inContainer;
   // Container for all the squares
   squaresContainer;
-  // Overlay 
-  overlayContainer;
 
-  constructor(scene, container, columns = 7, rowsOnScreen = 12, seedStr = null) {
+  constructor(scene, inContainer, columns = 7, rowsOnScreen = 12, seedStr = null) {
     super(scene, 0, 0);
-
+    this.inContainer = inContainer;
     this.columns = columns;
     this.rowsOnScreen = rowsOnScreen;
     this.maxRow = this.rowsOnScreen + Cave.ExtraRows;
 
-    this.squareSize = (container.width - Cave.HorizPadding * 2) / this.columns; // Round?
+    // const circle = scene.add.graphics({ fillStyle: { color: 0x00ff00 } });
+    // circle.fillCircle(0, 200, 800);
+    // this.add(circle);
 
-    this.setSize(this.squareSize * this.columns, container.height);
+    this.squareSize = (inContainer.width - Cave.Padding.left - Cave.Padding.right) / this.columns; // Round?
+
+    this.setSize(this.squareSize * this.columns, inContainer.height - Cave.Padding.top);
 
     this.squaresContainer = scene.add
-      .container(Math.round(Cave.HorizPadding), 0)
+      .container(Math.round(Cave.Padding.left), Math.round(Cave.Padding.top))
       .setSize(this.width, this.height);
-    
+
+    this.add(this.squaresContainer);    
+
     this.#randomSeed4 = seedStr ? HashManager.getSeed4FromString(seedStr) : HashManager.getRandomSeed4();
     this.#randomTokenFunction = HashManager.getRandomFunction(this.#randomSeed4);
-
 
     // Calculate the size of the squares based on the game size
     this.fontSize = this.squareSize * Cave.FontSizeFactor;
 
     console.log(`Cave size ${this.width},${this.height}, square size ${this.squareSize}, font size ${this.fontSize}`);
     
-
-    // this.squaresContainer.add(scene.add.graphics()
-    //   .fillStyle(0xff0000, 1)
-    //   .fillCircle(0, 0, 30));
-    this.setupOverlay();
-
     this.createSquares();
-    this.setSelectableSquaresBeforeType();
+    this.resetTyping();
 
     this.updatePendingSquares(true);
 
     scene.input.on('pointerdown', (pointer) => this.onPointerDown(pointer));
+    this.inContainer.add(this);
+  }
+
+  resetTyping() {
+    this.updateSelectableSquaresBeforeType();  
+    this.typedWordSquares = [];
+    this.typedWordString = '';
   }
 
   onPointerDown(pointer) {
@@ -138,7 +141,6 @@ export class Cave extends Phaser.GameObjects.Container {
   destroy() {
     this.scene.input.off('pointerdown');
     this.squaresContainer?.destroy();
-    this.overlayContainer?.destroy();
     this.squareLines?.clear();
     this.dugSquares?.clear();
     super.destroy();
@@ -220,21 +222,7 @@ export class Cave extends Phaser.GameObjects.Container {
       this.traceCaveTokens();
   }
 
-  setupOverlay() {
-    this.overlayContainer = this.scene.add
-      .container(0, 0)
-      .setSize(this.width, this.height)
-      .setDepth(100);
-
-    const gradientImage = this.scene.add.image(this.width / 2, this.height, Cave.CaveOverlayGradient.name);
-    gradientImage
-      .setOrigin(0.5, 1)
-      .setDisplaySize(this.width, this.height * Cave.GradientVerticalRatio)
-      .setAlpha(Cave.GradientAlpha);
-    this.overlayContainer.add(gradientImage);
-  }
-
-  setSelectableSquaresBeforeType() {
+  updateSelectableSquaresBeforeType() {
     this.selectableSquares.clear();
 
     const setSquareSelectable = (row, column) => {
@@ -265,7 +253,7 @@ export class Cave extends Phaser.GameObjects.Container {
     });
   }
 
-  setSelectableSquaresOnType(sq) {
+  updateSelectableSquaresOnType(sq) {
     this.selectableSquares.clear();
 
     const setSquareSelectable = (row, column) => {
@@ -290,11 +278,6 @@ export class Cave extends Phaser.GameObjects.Container {
     setSquareSelectable(row + 1, column + 1);
   }
 
-  deselectSquares() {
-    this.selectableSquares.forEach(sq => sq.setSelectable(false) && this.squaresPendingUpdate.add(sq));
-    this.selectableSquares.clear();
-  }
-
   updatePendingSquares(immediate = false) {
     this.squaresPendingUpdate.forEach(sq => sq.updateState(immediate));
     this.squaresPendingUpdate.clear();
@@ -316,14 +299,31 @@ export class Cave extends Phaser.GameObjects.Container {
   //  Typing/selection
   //
 
-  selectSquare(sq, select = true) {
+  selectSquare(sq) {
     this.squaresContainer.bringToTop(sq);
-    this.deselectSquares();
-    sq.setSelected(select) && this.squaresPendingUpdate.add(sq);
+    this.clearSelectableSquares();
+    if (sq.setSelected(true)) {
+      this.squaresPendingUpdate.add(sq);
+      this.updateSelectableSquaresOnType(sq);
+      // console.log(this.squaresPendingUpdate);
 
-    this.setSelectableSquaresOnType(sq);
-    // console.log(this.squaresPendingUpdate);
+      this.typedWordSquares.push(sq);
+      this.updateTypedWord();
+    }
     this.updatePendingSquares();
+  }
+
+  clearSelectableSquares() {
+    this.selectableSquares.forEach(sq => sq.setSelectable(false) && this.squaresPendingUpdate.add(sq));
+    this.selectableSquares.clear();
+  }
+
+  updateTypedWord() {
+    this.typedWordString = this.typedWordSquares.map(sq => sq.token).join('');
+    let str = LanguageTree.GetInstance().getValidWildcardWord(this.typedWordString);
+    let valid = !!str;
+    console.log(str, valid, this.typedWordSquares);
+    this.typedWordSquares.forEach(sq => sq.setSelectedValid(valid) && this.squaresPendingUpdate.add(sq));
   }
 
   //

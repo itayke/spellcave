@@ -2,5 +2,11 @@
 	"Tokens": [ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" ],
 	"GameTokens": [ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Qu", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" ],
 	"MinimumWord": 2,
-	"WildcardToken": "*"
+	"WildcardToken": "?",
+	"TokenBonusMoves": {
+    "Qu": 1,
+    "X": 1,
+    "Z": 1,
+    "J": 1
+	}
 }

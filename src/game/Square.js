@@ -10,6 +10,7 @@ export class Square extends Phaser.GameObjects.Container {
 
   static StateMask_Selectable = 1;
   static StateMask_Selected = 2;
+  static StateMask_SelectedValid = 4;
 
   // Desired mask state (use updateState to make the change)
   state = 0;
@@ -20,7 +21,7 @@ export class Square extends Phaser.GameObjects.Container {
   column;
   serializedRowColumn;
 
-  // Returns a serialized name for the square based on row and column, e.g. 12c for row 12 col 3
+  // Returns a serialized name for the square based on row and column, e.g. 12c for row 12 col 2 (0 based)
   static SerializedNameByRowColumn = (row, column) => `${row}${String.fromCharCode(97 + column)}`
   // Convert 12c notation to numeric [ row, column ]
   static DeserializeNameToRowColumn = (name) => [
@@ -108,12 +109,14 @@ export class Square extends Phaser.GameObjects.Container {
 
     let selected = this.isSelected();
     let selectable = this.isSelectable();
+    let valid = this.isSelectedValid();
 
     this.bgImageObj
       .setTint(
-        selected ? Cave.BgTintSelected :
-          selectable ? Cave.BgTintSelectable :
-            Cave.BgTint);
+        valid ? Cave.BgTintSelectedValid :
+          selected ? Cave.BgTintSelected :
+            selectable ? Cave.BgTintSelectable :
+              Cave.BgTint);
     this.textObj
       .setColor(selectable ? Cave.FontColorSelectable : Cave.FontColor)
     
@@ -138,13 +141,17 @@ export class Square extends Phaser.GameObjects.Container {
     return true;
   }
 
-  setSelectable = (selectable = true) =>
-    this.setStateMask(Square.StateMask_Selectable, selectable);
+  setSelectable = (flag = true) =>
+    this.setStateMask(Square.StateMask_Selectable, flag);
   isSelectable = () => this.getStateMask(Square.StateMask_Selectable);
 
-  setSelected = (selected = true) =>
-    this.setStateMask(Square.StateMask_Selected, selected);
+  setSelected = (flag = true) =>
+    this.setStateMask(Square.StateMask_Selected, flag);
   isSelected = () => this.getStateMask(Square.StateMask_Selected);
+
+  setSelectedValid = (flag = true) =>
+    this.setStateMask(Square.StateMask_SelectedValid, flag);
+  isSelectedValid = () => this.getStateMask(Square.StateMask_SelectedValid);
 
   /**
    * Sets or clears the specified flag(s) in the state mask.

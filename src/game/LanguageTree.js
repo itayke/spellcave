@@ -359,7 +359,7 @@ export class LanguageTree {
    * @param {Set<string>} [results=new Set()] - A set to store the valid words found.
    * @returns {Set<string>} A set of valid words with all wildcard tokens replaced.
    */
-  getAllWildcardWords(word, results = new Set()) {
+  getAllValidWildcardWords(word, results = new Set()) {
     const wildIdx = word.indexOf(LanguageTree.WildcardToken);
     if (wildIdx < 0) {
       if (this.isValidWord(word)) {
@@ -377,11 +377,38 @@ export class LanguageTree {
 
     const rest = word.slice(wildIdx + 1);
     for (const option of wildcardOptions) {
-      this.getAllWildcardWords(part + option + rest, results);
+      this.getAllValidWildcardWords(part + option + rest, results);
     }
 
     return results;
   }
+
+  /**
+   * Finds and returns a valid word by replacing a wildcard token in the given word.
+   * Returns null if no wildcards words are available, or if word is invalid.
+   *
+   * @param {string} word - The word containing a wildcard token to be replaced.
+   * @returns {string|null} - The valid word with the wildcard replaced, or null if no valid word is found.
+   */
+  getValidWildcardWord(word) {
+    const wildIdx = word.indexOf(LanguageTree.WildcardToken);
+    if (wildIdx < 0)
+      return this.isValidWord(word) ? word : null;
+    
+    const part = wildIdx === 0 ? '' : word.slice(0, wildIdx);
+    const wildcardOptions = wildIdx === 0 ?
+      this.allTokensUpper :
+      this.nextLettersInPartialWord(part);
+
+    const rest = word.slice(wildIdx + 1);
+    for (const option of wildcardOptions) {
+      let wildcardWord = this.getValidWildcardWord(part + option + rest);
+      if (wildcardWord)
+        return wildcardWord;
+    }
+    return null;
+  }
+  
 
   /**
    * Checks if the given word is a valid partial word.
@@ -676,7 +703,7 @@ export class LanguageTree {
     // word = 'FL*W**';
     let baseWord = langInstance.getRandomWord(7);
     word = LanguageTree.replaceRandomLetters(baseWord, 3, LanguageTree.WildcardToken);
-    console.log(`'${baseWord}' with wildcards -> '${word}' completion:`, langInstance.getAllWildcardWords(word));
+    console.log(`'${baseWord}' with wildcards -> '${word}' completion:`, langInstance.getAllValidWildcardWords(word));
 
     word = langInstance.getRandomWord(2); // 'it';
     console.log(`\nRandom words from '${word}':`);
