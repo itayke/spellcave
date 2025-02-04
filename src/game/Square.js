@@ -7,10 +7,11 @@ import { LanguageTree } from './LanguageTree.js';
 // Square in the cave, with origin at the top-left corner
 export class Square extends Phaser.GameObjects.Container {
 
-
   static StateMask_Selectable = 1;
   static StateMask_Selected = 2;
   static StateMask_SelectedValid = 4;
+
+  static ImageSquareSizeFactor = 1.11;
 
   // Desired mask state (use updateState to make the change)
   state = 0;
@@ -36,6 +37,13 @@ export class Square extends Phaser.GameObjects.Container {
 
   debugText;
 
+  outlineImage;
+
+  // For tweening
+  tintR256 = 0;
+  tintG256 = 0;
+  tintB256 = 0;
+
   constructor(scene, cave, row, column, token, serializedRowColumn) {
     super(scene,
       Math.round((column + 0.5) * cave.squareSize),
@@ -56,10 +64,11 @@ export class Square extends Phaser.GameObjects.Container {
     this.add(
       this.bgImageObj = scene.add.image(0, 0, Cave.SquareImage.name)
         .setOrigin(0.5)   // Center
-        .setDepth(10)
-        .setTint(Cave.BgTint)
-        .setDisplaySize(Math.ceil(this.cave.squareSize), Math.ceil(this.cave.squareSize))
+        .setDisplaySize(Math.ceil(Square.ImageSquareSizeFactor * this.cave.squareSize),
+          Math.ceil(Square.ImageSquareSizeFactor * this.cave.squareSize))
     );
+
+    this.forceTint(Cave.BgTint);
 
     this.add(
       this.textObj = new Phaser.GameObjects.Text(scene,
@@ -97,6 +106,21 @@ export class Square extends Phaser.GameObjects.Container {
       console.log(`Square ${row},${column} created with token ${token}`);
   }
 
+  forceTint(color) {
+    [this.tintR256, this.tintG256, this.tintB256] = Square.GetRGB256FromColor(color);
+    this.bgImageObj.setTint(color);
+  }
+
+  execTint() {
+    // console.log(`${Math.floor(this.tintR256)}, ${Math.floor(this.tintG256)}, ${Math.floor(this.tintB256)}`);
+    const toByte = (n) => Math.min(Math.max(Math.round(n), 0), 255)
+    this.bgImageObj.setTint(Square.GetColorFromRGB256(
+      toByte(this.tintR256),
+      toByte(this.tintG256),
+      toByte(this.tintB256)
+    ));
+  }
+  
   //
   //  Square states
   //
@@ -111,19 +135,37 @@ export class Square extends Phaser.GameObjects.Container {
     let selectable = this.isSelectable();
     let valid = this.isSelectedValid();
 
-    this.bgImageObj
-      .setTint(
-        valid ? Cave.BgTintSelectedValid :
-          selected ? Cave.BgTintSelected :
-            selectable ? Cave.BgTintSelectable :
-              Cave.BgTint);
+    let curTint = this.bgImageObj.tint;
+    let newTint = valid ? Cave.BgTintSelectedValid :
+      selected ? Cave.BgTintSelected :
+        selectable ? Cave.BgTintSelectable :
+          Cave.BgTint;
+    
+    if (newTint != curTint) {
+      if (immediate)
+        this.forceTint(newTint);
+      else {
+        const [r256, g256, b256] = Square.GetRGB256FromColor(newTint);
+        this.scene.tweens.add({
+          targets: this,
+          tintR256: r256,
+          tintG256: g256,
+          tintB256: b256,
+          duration: 250,
+          ease: 'Back.easeOut',
+          delay: selected ? 0 : Math.max(this.row - this.cave.topRow, 0) * 20,
+          onUpdate: () => this.execTint()
+        });
+      }
+    }
+    
     this.textObj
       .setColor(selectable ? Cave.FontColorSelectable : Cave.FontColor)
     
+    // Scale
     let newScale = selected ? Cave.SquareScaleSelected : 1;
     let curScale = this.scaleX;
     if (newScale != curScale) {
-            
       if (immediate)
         this.setScale(newScale, newScale);
       else
@@ -153,6 +195,26 @@ export class Square extends Phaser.GameObjects.Container {
     this.setStateMask(Square.StateMask_SelectedValid, flag);
   isSelectedValid = () => this.getStateMask(Square.StateMask_SelectedValid);
 
+  selectSquare(select = true) {
+    if (!this.setSelected(select))
+      return false;
+
+    if (select) {
+      this.outlineImage = this.scene.add.image(this.x, this.y, Cave.SquareOutlineImage.name)
+        .setOrigin(0.5)   // Center
+        .setDisplaySize(Cave.SquareScaleSelected * Math.ceil(Square.ImageSquareSizeFactor * this.cave.squareSize),
+          Cave.SquareScaleSelected * Math.ceil(Square.ImageSquareSizeFactor * this.cave.squareSize));
+      // this.outlineImage.scaleX = this.outlineImage.scaleY = 10;
+      this.cave.squaresContainer.add(this.outlineImage);
+      console.log(this.outlineImage)
+    }
+    else {
+      this.outlineImage?.destroy();
+      this.outlineImage = null;
+    }
+    return true;
+  }
+
   /**
    * Sets or clears the specified flag(s) in the state mask.
    *
@@ -175,7 +237,7 @@ export class Square extends Phaser.GameObjects.Container {
    * @param {number} flagMask - The bitmask representing the flag(s) to check.
    * @returns {boolean} - Returns true if the flag(s) are set, otherwise false.
    */
-  getStateMask = flagMask => (this.state & flagMask) !== 0;  
+  getStateMask = flagMask => (this.state & flagMask) !== 0;
 
   //
   // Visuals
@@ -191,5 +253,15 @@ export class Square extends Phaser.GameObjects.Container {
     const c3 = c1 + 1;
     return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
   }
+
+  // Convert color to RGB256
+  static GetRGB256FromColor = (color) => [
+    (color >> 16) & 0xff,
+    (color >> 8) & 0xff,
+    color & 0xff
+  ];
+  
+  // Convert RGB256 to color
+  static GetColorFromRGB256 = (r, g, b) => (r << 16) | (g << 8) | b;
 
 }

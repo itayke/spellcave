@@ -56,7 +56,6 @@ export class Game extends Scene {
     
     this.cave = new Cave(this, this.gameContainer);
     this.caveUI = new CaveUI(this, this.gameContainer);
-    // // this.add.existing(this.cave);
 
   }
 

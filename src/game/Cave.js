@@ -27,13 +27,13 @@ export class Cave extends Phaser.GameObjects.Container {
   static FontColorSelectable = '#000000';
   static ExtraRows = 8;
 
-  static BgTint = Cave.ParseColorFromString('#ffffff');
-  static BgTintSelectable = Cave.ParseColorFromString('#f9f8b5');
+  static BgTint = Cave.ParseColorFromString('#b9b9b9');
+  static BgTintSelectable = Cave.ParseColorFromString('#ffffff');
   //static BgTintSelected = Cave.ParseColorFromString('#91deeb');
-  static BgTintSelected = Cave.ParseColorFromString('#f2b6ff');
-  static BgTintSelectedValid = Cave.ParseColorFromString('#bdf680');
+  static BgTintSelected = Cave.ParseColorFromString('#f0ef98');
+  static BgTintSelectedValid = Cave.ParseColorFromString('#8ef77c');
 
-  static SquareScaleSelected = 1.26;
+  static SquareScaleSelected = 1.25;
 
   // Value 0..1 representing the use of random (0.0) through language probabilites (1.0)
   static LanguageTokenVsRandomProbabilityScale = 0.8;
@@ -81,6 +81,8 @@ export class Cave extends Phaser.GameObjects.Container {
   inContainer;
   // Container for all the squares
   squaresContainer;
+  
+  selectedSquaresContainer;
 
   constructor(scene, inContainer, columns = 7, rowsOnScreen = 12, seedStr = null) {
     super(scene, 0, 0);
@@ -100,8 +102,12 @@ export class Cave extends Phaser.GameObjects.Container {
     this.squaresContainer = scene.add
       .container(Math.round(Cave.Padding.left), Math.round(Cave.Padding.top))
       .setSize(this.width, this.height);
-
     this.add(this.squaresContainer);    
+
+    this.selectedSquaresContainer = scene.add
+    .container(Math.round(Cave.Padding.left), Math.round(Cave.Padding.top))
+    .setSize(this.width, this.height);
+    this.add(this.selectedSquaresContainer);    
 
     this.#randomSeed4 = seedStr ? HashManager.getSeed4FromString(seedStr) : HashManager.getRandomSeed4();
     this.#randomTokenFunction = HashManager.getRandomFunction(this.#randomSeed4);
@@ -300,9 +306,10 @@ export class Cave extends Phaser.GameObjects.Container {
   //
 
   selectSquare(sq) {
-    this.squaresContainer.bringToTop(sq);
+    
     this.clearSelectableSquares();
-    if (sq.setSelected(true)) {
+    if (sq.selectSquare(true)) {
+      this.selectedSquaresContainer.add(sq);
       this.squaresPendingUpdate.add(sq);
       this.updateSelectableSquaresOnType(sq);
       // console.log(this.squaresPendingUpdate);

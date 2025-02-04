@@ -34,7 +34,7 @@ const config = {
   height: GameSize.y,
   zoom: Zoom,
   parent: 'game-container',
-  backgroundColor: '#000',
+  backgroundColor: '#000000',
   scene: [
     Game,
   ]
