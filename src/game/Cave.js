@@ -7,7 +7,11 @@ import { LanguageTree } from './LanguageTree.js';
 // A board of Squares
 export class Cave extends Phaser.GameObjects.Container {
 
-  static Padding = { left: 8, right: 8, top: 16 };
+  static Padding = { left: 12, right: 12, top: 16, bottom: 12 };
+
+  static SquareImage = { name: 'square', file: 'squareBg3.png' };
+  static SquareOutlineImage = { name: 'squareBgOutline', file: 'squareBgOutline.png' };
+
   static FontName = 'CaveFont';
 
   // static FontFile = 'MuseoSans-500.otf';
@@ -33,7 +37,8 @@ export class Cave extends Phaser.GameObjects.Container {
   static BgTintSelected = Cave.ParseColorFromString('#f0ef98');
   static BgTintSelectedValid = Cave.ParseColorFromString('#8ef77c');
 
-  static SquareScaleSelected = 1.25;
+  // Distance to enable swipe
+  static SwipeMoveThresholdDistSq = 5 * 5;
 
   // Value 0..1 representing the use of random (0.0) through language probabilites (1.0)
   static LanguageTokenVsRandomProbabilityScale = 0.8;
@@ -44,10 +49,16 @@ export class Cave extends Phaser.GameObjects.Container {
   // The closer the value to 0, the less likely it is to repeat. 
   static AdjacentTokenRepeatWeight = 0.35;
 
-  static SquareImage = { name: 'square', file: 'squareBg3.png' };
-  static SquareOutlineImage = { name: 'squareBgOutline', file: 'squareBgOutline.png' };
+  // How permissive the diamond size is for swiping. 0.5 is a perfect center diamond, larger cuts into the corners.
+  static SwipeDiamondThreshold = 0.6;
+
+  // Frequency in secs between deselects in chain
+  static DelayFrequencyDeselect = 0.035;
+
   
+  // Array[4] random seed
   #randomSeed4;
+  // Function that returns a deterministic random number based on provided seed4
   #randomTokenFunction;
 
   // Visible squares window size
@@ -81,8 +92,17 @@ export class Cave extends Phaser.GameObjects.Container {
   inContainer;
   // Container for all the squares
   squaresContainer;
-  
+  // Overlay for selected squares
   selectedSquaresContainer;
+
+  // Tap/swipe info
+  pointerDownPos = null;
+  // In swipe mode
+  swipeStarted = false;
+  // Swipe square position { row: <int>, column: <int> } or null while not swiping
+  swipeSquarePos = null;
+  // Square clicked on pointer down
+  pointerDownStartedOnSelectedSq = null;
 
   constructor(scene, inContainer, columns = 7, rowsOnScreen = 12, seedStr = null) {
     super(scene, 0, 0);
@@ -122,25 +142,100 @@ export class Cave extends Phaser.GameObjects.Container {
 
     this.updatePendingSquares(true);
 
-    scene.input.on('pointerdown', (pointer) => this.onPointerDown(pointer));
+    scene.input.on('pointerdown', (pointer) => this.onPointerDown(pointer));    
+    scene.input.on('pointermove', (pointer) => this.onPointerMove(pointer));
+    scene.input.on('pointerup', (pointer) => this.onPointerUp(pointer));
+    scene.input.on('pointerupoutside', (pointer) => this.onPointerUp(pointer));
     this.inContainer.add(this);
   }
 
   resetTyping() {
-    this.updateSelectableSquaresBeforeType();  
     this.typedWordSquares = [];
     this.typedWordString = '';
+    this.updateSelectableSquares();
   }
 
+
   onPointerDown(pointer) {
+    this.pointerDownStartedOnSelectedSq = null;
+
     let column = Math.floor(pointer.x / this.squareSize);
     let row = this.topRow + Math.floor(pointer.y / this.squareSize);
 
     let square = this.getSquareAt(row, column);
-    if (GameManager.Debug >= 1) console.log(`${row},${column}`, square.isSelectable());
+    if (!square)
+      return;
+
+    if (GameManager.Debug >= 2) console.log(`${row},${column}`, square.isSelectable());
     
-    if (square?.isSelectable()) {
-      this.selectSquare(square);
+    // Already selected, deselect anything after
+    if (square.isSelected()) {
+      this.pointerDownStartedOnSelectedSq = square;
+      this.deselectAfterSquare(square);
+    }
+    // Not selected and selectable, select it
+    else if (square.isSelectable()) {
+      this.selectSquare(square, true);
+    }
+
+    this.pointerDownPos = { x: pointer.x, y: pointer.y };
+  }
+
+  onPointerUp(pointer) {
+    // Stationary (not swipe) and started on selected square - deselect it
+    if (!this.swipeStarted &&
+      this.pointerDownStartedOnSelectedSq) {
+      this.selectSquare(this.pointerDownStartedOnSelectedSq, false);
+    }
+
+    this.pointerDownPos = null;
+    this.swipeStarted = false;
+  }
+
+  onPointerMove(pointer) {
+    if (!this.pointerDownPos)
+      return;
+
+    // Check if dist passed swipe threshold 
+    if (!this.swipeStarted) {
+      const distX = pointer.x - this.pointerDownPos.x;
+      const distY = pointer.y - this.pointerDownPos.y;
+      const distanceSq = distX * distX + distY * distY;
+
+      if (distanceSq > Cave.SwipeMoveThresholdDistSq) {
+        this.isSwipe = true;
+        if (GameManager.Debug >= 1) console.log("Swipe starts");
+
+        this.swipeStarted = true;
+      }
+    }
+    else {
+      let modX = (pointer.x % this.squareSize) / this.squareSize;
+      let modY = (pointer.y % this.squareSize) / this.squareSize;
+      // If inside diamond
+      if (Math.abs(modX - 0.5) + Math.abs(modY - 0.5) <= Cave.SwipeDiamondThreshold) {
+        let column = Math.floor(pointer.x / this.squareSize);
+        let row = this.topRow + Math.floor(pointer.y / this.squareSize);
+        // And stepped into a new square
+        if (!this.swipeSquarePos ||
+          column != this.swipeSquarePos.column ||
+          row != this.swipeSquarePos.row) {
+          
+          this.swipeSquarePos = { row, column };    
+          let square = this.getSquareAt(row, column);
+          if (!square)
+            return;
+
+          // Already selected, deselect anything after
+          if (square.isSelected()) {
+            this.deselectAfterSquare(square);
+          }
+          // Not selected and selectable, select it
+          else if (square.isSelectable()) {
+            this.selectSquare(square, true);
+          }
+        }
+      }
     }
   }
 
@@ -228,7 +323,20 @@ export class Cave extends Phaser.GameObjects.Container {
       this.traceCaveTokens();
   }
 
-  updateSelectableSquaresBeforeType() {
+  // Automatically update squares based on whether a word is being typed
+  updateSelectableSquares() 
+  {
+    if (this.typedWordSquares.length) {
+      const lastSq = this.typedWordSquares[this.typedWordSquares.length - 1];
+      this.updateSelectableSquaresAround(lastSq);
+    }
+    else {
+      this.updateSelectableSquaresNoWord();
+    }
+  }
+
+  // Update squares by previous caves
+  updateSelectableSquaresNoWord() {
     this.selectableSquares.clear();
 
     const setSquareSelectable = (row, column) => {
@@ -259,7 +367,8 @@ export class Cave extends Phaser.GameObjects.Container {
     });
   }
 
-  updateSelectableSquaresOnType(sq) {
+  // Update selectable around specified square
+  updateSelectableSquaresAround(sq) {
     this.selectableSquares.clear();
 
     const setSquareSelectable = (row, column) => {
@@ -305,19 +414,54 @@ export class Cave extends Phaser.GameObjects.Container {
   //  Typing/selection
   //
 
-  selectSquare(sq) {
+  selectSquare(sq, select) {
     
     this.clearSelectableSquares();
-    if (sq.selectSquare(true)) {
-      this.selectedSquaresContainer.add(sq);
-      this.squaresPendingUpdate.add(sq);
-      this.updateSelectableSquaresOnType(sq);
-      // console.log(this.squaresPendingUpdate);
 
-      this.typedWordSquares.push(sq);
-      this.updateTypedWord();
+    if (sq.selectSquare(select)) {
+      // Pending visual update
+      this.squaresPendingUpdate.add(sq);
+
+      if (select) {
+        // Add square to word
+        this.typedWordSquares.push(sq);
+      }
+      else if (this.typedWordSquares[this.typedWordSquares.length - 1] === sq) {
+        // If sq is the last in the word, remove it
+        this.typedWordSquares.pop();
+      }
     }
+
+    this.updateSelectableSquares();
+    this.updateTypedWord();
     this.updatePendingSquares();
+  }
+
+  deselectAfterSquare(sq) {
+    const index = this.typedWordSquares.indexOf(sq);
+    if (index === -1)
+      return -1;
+
+    this.clearSelectableSquares();
+
+    let numDeselect = this.typedWordSquares.length - index - 1;
+    if (numDeselect) {
+      // Deselect the rest
+      for (let i = index + 1, delay = 0; i < this.typedWordSquares.length; i++) {
+        let sqAfter = this.typedWordSquares[i];
+        sqAfter.selectSquare(false, delay += Cave.DelayFrequencyDeselect);
+      }
+      // Remove through the end
+      this.typedWordSquares.splice(index + 1);
+    }
+
+    // Find new selectables
+    this.updateSelectableSquares();
+    
+    this.updateTypedWord();
+    this.updatePendingSquares();
+
+    return numDeselect;
   }
 
   clearSelectableSquares() {
@@ -329,7 +473,7 @@ export class Cave extends Phaser.GameObjects.Container {
     this.typedWordString = this.typedWordSquares.map(sq => sq.token).join('');
     let str = LanguageTree.GetInstance().getValidWildcardWord(this.typedWordString);
     let valid = !!str;
-    console.log(str, valid, this.typedWordSquares);
+    if (valid && GameManager.Debug) console.log(this.typedWordString, '->', str);
     this.typedWordSquares.forEach(sq => sq.setSelectedValid(valid) && this.squaresPendingUpdate.add(sq));
   }
 
@@ -372,16 +516,15 @@ export class Cave extends Phaser.GameObjects.Container {
    * @param {number} cy - Y position of the control point (any number).
    * @returns {number} - The calculated y value on the quadratic curve.
    */
-    static CurveQuad(t, cx, cy) {
-      if (t <= cx) {
-        // First half: quadratic curve from (0,0) through (cx/2, cy/2) to (cx,cy)
-        const qt = t / cx;
-        return cy * qt * qt;
-      } else {
-        // Second half: quadratic curve from (cx,cy) through ((1+cx)/2, (1+cy)/2) to (1,1)
-        const qt = (t - cx) / (1 - cx);
-        return cy + (1 - cy) * (2 * qt - qt * qt);
-      }
+  static CurveQuad = (t, cx, cy) => {
+    if (t <= cx) {
+      const qt = 1 - t / cx;
+      return cy * (1 - qt * qt);
+    } else {
+      const qt = 1 - (t - cx) / (1 - cx);
+      return cy + (1 - cy) * (1 - (2 * qt - qt * qt));
     }
+  };
+ 
     
 }

@@ -11,12 +11,15 @@ export class Square extends Phaser.GameObjects.Container {
   static StateMask_Selected = 2;
   static StateMask_SelectedValid = 4;
 
-  static ImageSquareSizeFactor = 1.11;
+  static ImageSquareSizeFactor = 1.12;
+  static SquareScaleSelected = 1.25;
 
   // Desired mask state (use updateState to make the change)
   state = 0;
   // Currently updated state
   currentState = 0;
+  // Time (s) to delay update
+  updateDelay = 0;
 
   row;
   column;
@@ -111,7 +114,7 @@ export class Square extends Phaser.GameObjects.Container {
     this.bgImageObj.setTint(color);
   }
 
-  execTint() {
+  updateTint() {
     // console.log(`${Math.floor(this.tintR256)}, ${Math.floor(this.tintG256)}, ${Math.floor(this.tintB256)}`);
     const toByte = (n) => Math.min(Math.max(Math.round(n), 0), 255)
     this.bgImageObj.setTint(Square.GetColorFromRGB256(
@@ -119,6 +122,22 @@ export class Square extends Phaser.GameObjects.Container {
       toByte(this.tintG256),
       toByte(this.tintB256)
     ));
+  }
+
+  onUpdateScale() {
+    this.outlineImage?.setScale(this.scaleX * this.bgImageObj.scaleX);
+  }
+
+  onCompleteScale() {
+    if (!this.isSelected()) {
+      // Remove outline
+      this.outlineImage?.destroy();
+      this.outlineImage = null;
+
+      // Back to previous container
+      this.cave.squaresContainer.add(this);
+      this.cave.squaresContainer.sendToBack(this);
+    }
   }
   
   //
@@ -131,9 +150,11 @@ export class Square extends Phaser.GameObjects.Container {
       return false;
     if (GameManager.Debug >= 2) console.log(`${this.serializedRowColumn}: ${this.state} ${this.currentState}`);
 
+    this.scene.tweens.killTweensOf(this);
+
     let selected = this.isSelected();
     let selectable = this.isSelectable();
-    let valid = this.isSelectedValid();
+    let valid = selected && this.isSelectedValid();
 
     let curTint = this.bgImageObj.tint;
     let newTint = valid ? Cave.BgTintSelectedValid :
@@ -151,10 +172,10 @@ export class Square extends Phaser.GameObjects.Container {
           tintR256: r256,
           tintG256: g256,
           tintB256: b256,
-          duration: 250,
-          ease: 'Back.easeOut',
-          delay: selected ? 0 : Math.max(this.row - this.cave.topRow, 0) * 20,
-          onUpdate: () => this.execTint()
+          duration: 75,
+          ease: 'Quad.easeOut',
+          // delay: selected ? 0 : Math.max(this.row - this.cave.topRow, 0) * 20,
+          onUpdate: () => this.updateTint()
         });
       }
     }
@@ -163,20 +184,30 @@ export class Square extends Phaser.GameObjects.Container {
       .setColor(selectable ? Cave.FontColorSelectable : Cave.FontColor)
     
     // Scale
-    let newScale = selected ? Cave.SquareScaleSelected : 1;
+    let newScale = selected ? Square.SquareScaleSelected : 1;
     let curScale = this.scaleX;
     if (newScale != curScale) {
-      if (immediate)
+      if (immediate) {
         this.setScale(newScale, newScale);
-      else
+        this.onUpdateScale();
+        this.onCompleteScale();
+      }
+      else {
+        // Scale tween
         this.scene.tweens.add({
           targets: this,
           scaleX: newScale,
           scaleY: newScale,
-          duration: 250,
-          ease: Square.EaseOutBackExtreme // t => Cave.CurveQuad(t, 0.4, 2)
-          // ease: 'Back.easeOut'
+          duration: selected ? 175 : 100,
+          // ease: Square.EaseOutBackExtreme, 
+          // ease: 'Bounce.easeOut',
+          ease: selected ? 
+            (t => Cave.CurveQuad(t, 0.4, 1.6)) :
+            (t => Cave.CurveQuad(t, 0.1, -0.25)),
+          onUpdate: () => this.onUpdateScale(),
+          onComplete: () => this.onCompleteScale()
         });
+      }
     }
 
     this.currentState = this.state;
@@ -195,24 +226,40 @@ export class Square extends Phaser.GameObjects.Container {
     this.setStateMask(Square.StateMask_SelectedValid, flag);
   isSelectedValid = () => this.getStateMask(Square.StateMask_SelectedValid);
 
-  selectSquare(select = true) {
+  // Change flags and visualize (possibly delayed)
+  selectSquare(select = true, delay = 0) {
     if (!this.setSelected(select))
       return false;
 
+    if (delay > 0)
+      this.scene.time.delayedCall(delay * 1000, () => this.selectSquareFinalize(select));
+    else
+      this.selectSquareFinalize(select);
+
+    return true;
+  }
+
+  // Visual changes
+  selectSquareFinalize(select) {
+    if (!this.updateState())
+      return;
+
     if (select) {
+
+      // Remove old outline if during animation
+      this.outlineImage?.destroy();
+      // Outline image is placed separately in the original container
       this.outlineImage = this.scene.add.image(this.x, this.y, Cave.SquareOutlineImage.name)
         .setOrigin(0.5)   // Center
-        .setDisplaySize(Cave.SquareScaleSelected * Math.ceil(Square.ImageSquareSizeFactor * this.cave.squareSize),
-          Cave.SquareScaleSelected * Math.ceil(Square.ImageSquareSizeFactor * this.cave.squareSize));
-      // this.outlineImage.scaleX = this.outlineImage.scaleY = 10;
-      this.cave.squaresContainer.add(this.outlineImage);
-      console.log(this.outlineImage)
+        .setDisplaySize(this.bgImageObj.displayWidth, this.bgImageObj.displayHeight);
+      this.onUpdateScale();
+      
+      // Add to the topmost container, in the back
+      this.cave.selectedSquaresContainer.addAt(this.outlineImage, 0);
+
+      // Add to the topmost container, top
+      this.cave.selectedSquaresContainer.add(this);
     }
-    else {
-      this.outlineImage?.destroy();
-      this.outlineImage = null;
-    }
-    return true;
   }
 
   /**
