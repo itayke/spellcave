@@ -61,10 +61,12 @@ export class Cave extends Phaser.GameObjects.Container {
   // How permissive the diamond size is for swiping. 0.5 is a perfect center diamond, larger cuts into the corners.
   static SwipeDiamondThreshold = 0.5;
   // How straight (degrees) the swipe must be to be considered a straight line and allow for using the full square vs diamond
-  static StraightAngleThreshold = 15;
+  static StraightAngleDegsThreshold = 12.5;
 
   // Frequency in secs between deselects in chain
-  static DelayFrequencyDeselect = 0.035;
+  static DelayFrequencyDeselect = 0.04;
+  // Factor to reduce the delay frequency for each subsequent deselect
+  static DelayFrequencyDeselectFactor = 0.95;
 
   
   // Array[4] random seed
@@ -226,7 +228,7 @@ export class Cave extends Phaser.GameObjects.Container {
       // Check if pointer is moving diagonally
       let angleDeg = pointer.angle * (180 / Math.PI);
       let angleDeg90 = (angleDeg + 180) % 90;
-      let angleIsStraight = Math.abs(angleDeg90 - 45) > (45 - Cave.StraightAngleThreshold);
+      let angleIsStraight = Math.abs(angleDeg90 - 45) > (45 - Cave.StraightAngleDegsThreshold);
       
       // If straight movement, ensure it's in the the center diamond
       if (angleIsStraight ||
@@ -462,10 +464,13 @@ export class Cave extends Phaser.GameObjects.Container {
 
     let numDeselect = this.typedWordSquares.length - index - 1;
     if (numDeselect) {
+      let delayFreq = Cave.DelayFrequencyDeselect;
       // Deselect the rest
-      for (let i = index + 1, delay = 0; i < this.typedWordSquares.length; i++) {
+      for (let i = index + 1, delay = 0;
+        i < this.typedWordSquares.length;
+        i++, delayFreq *= Cave.DelayFrequencyDeselectFactor) {
         let sqAfter = this.typedWordSquares[i];
-        sqAfter.selectSquare(false, delay += Cave.DelayFrequencyDeselect);
+        sqAfter.selectSquare(false, delay += delayFreq);
       }
       // Remove through the end
       this.typedWordSquares.splice(index + 1);
