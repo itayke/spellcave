@@ -27,15 +27,24 @@ export class Cave extends Phaser.GameObjects.Container {
   static FontSizeFactor = 0.55;
   
   static FontSpacing = 0;
-  static FontColor = '#000000';
-  static FontColorSelectable = '#000000';
   static ExtraRows = 8;
 
+  /*
+  static FontColor = '#000000';
+  static FontColorSelectable = '#000000';
   static BgTint = Cave.ParseColorFromString('#b9b9b9');
   static BgTintSelectable = Cave.ParseColorFromString('#ffffff');
-  //static BgTintSelected = Cave.ParseColorFromString('#91deeb');
   static BgTintSelected = Cave.ParseColorFromString('#f0ef98');
   static BgTintSelectedValid = Cave.ParseColorFromString('#8ef77c');
+  */
+  
+  static FontColor = '#f6f7f9';
+  static FontColorSelectable = '#000000';
+
+  static BgTint = Cave.ParseColorFromString('#3d3e43');
+  static BgTintSelectable = Cave.ParseColorFromString('#ffffff');
+  static BgTintSelected = Cave.ParseColorFromString('#ec9a3d');
+  static BgTintSelectedValid = Cave.ParseColorFromString('#80ec3d');
 
   // Distance to enable swipe
   static SwipeMoveThresholdDistSq = 5 * 5;
@@ -50,7 +59,7 @@ export class Cave extends Phaser.GameObjects.Container {
   static AdjacentTokenRepeatWeight = 0.35;
 
   // How permissive the diamond size is for swiping. 0.5 is a perfect center diamond, larger cuts into the corners.
-  static SwipeDiamondThreshold = 0.6;
+  static SwipeDiamondThreshold = 1;
 
   // Frequency in secs between deselects in chain
   static DelayFrequencyDeselect = 0.035;
@@ -394,7 +403,7 @@ export class Cave extends Phaser.GameObjects.Container {
   }
 
   updatePendingSquares(immediate = false) {
-    this.squaresPendingUpdate.forEach(sq => sq.updateState(immediate));
+    this.squaresPendingUpdate.forEach(sq => sq.updateVisualState(immediate));
     this.squaresPendingUpdate.clear();
   }
 
@@ -414,8 +423,7 @@ export class Cave extends Phaser.GameObjects.Container {
   //  Typing/selection
   //
 
-  selectSquare(sq, select) {
-    
+  selectSquare(sq, select) {    
     this.clearSelectableSquares();
 
     if (sq.selectSquare(select)) {

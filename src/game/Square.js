@@ -17,7 +17,7 @@ export class Square extends Phaser.GameObjects.Container {
   // Desired mask state (use updateState to make the change)
   state = 0;
   // Currently updated state
-  currentState = 0;
+  visualState = 0;
   // Time (s) to delay update
   updateDelay = 0;
 
@@ -42,7 +42,12 @@ export class Square extends Phaser.GameObjects.Container {
 
   outlineImage;
 
+  // Private field for tweening
+  #selectTween;
+  #tintTween;
+  
   // For tweening
+  #desiredTint;
   tintR256 = 0;
   tintG256 = 0;
   tintB256 = 0;
@@ -103,7 +108,7 @@ export class Square extends Phaser.GameObjects.Container {
       .setVisible(false);
     this.add(this.debugText);
     
-    this.updateState();
+    this.updateVisualState();
 
     if (GameManager.Debug >= 2)
       console.log(`Square ${row},${column} created with token ${token}`);
@@ -124,11 +129,19 @@ export class Square extends Phaser.GameObjects.Container {
     ));
   }
 
+  onCompleteTint() {
+    this.#tintTween = null;
+
+    if (this.#desiredTint != this.bgImageObj.tint)
+      this.forceTint(this.#desiredTint);
+  }
+
   onUpdateScale() {
     this.outlineImage?.setScale(this.scaleX * this.bgImageObj.scaleX);
   }
 
   onCompleteScale() {
+    this.#selectTween = null;
     if (!this.isSelected()) {
       // Remove outline
       this.outlineImage?.destroy();
@@ -138,55 +151,66 @@ export class Square extends Phaser.GameObjects.Container {
       this.cave.squaresContainer.add(this);
       this.cave.squaresContainer.sendToBack(this);
     }
+
+    // Update still pending
+    if (this.state !== this.visualState)
+      this.updateVisualState(true);
   }
   
   //
   //  Square states
   //
 
-  updateState(immediate = false) {
+  updateVisualState(immediate = false) {
     // Check if change is needed
-    if (this.state === this.currentState)
+    if (this.state === this.visualState)
       return false;
-    if (GameManager.Debug >= 2) console.log(`${this.serializedRowColumn}: ${this.state} ${this.currentState}`);
 
-    this.scene.tweens.killTweensOf(this);
+    if (GameManager.Debug >= 2) console.log(`${this.serializedRowColumn}: ${this.state} ${this.visualState}`);
 
-    let selected = this.isSelected();
-    let selectable = this.isSelectable();
-    let valid = selected && this.isSelectedValid();
+    let prevSelected = this.isSelected(this.visualState);
+    this.visualState = this.state;
 
-    let curTint = this.bgImageObj.tint;
-    let newTint = valid ? Cave.BgTintSelectedValid :
+    let selected = this.isSelected(this.state);
+    let selectable = this.isSelectable(this.state);
+    let valid = selected && this.isSelectedValid(this.state);
+
+    this.textObj.setColor(selectable || selected ? Cave.FontColorSelectable : Cave.FontColor)
+        
+    this.#desiredTint = valid ? Cave.BgTintSelectedValid :
       selected ? Cave.BgTintSelected :
         selectable ? Cave.BgTintSelectable :
           Cave.BgTint;
     
-    if (newTint != curTint) {
-      if (immediate)
-        this.forceTint(newTint);
+    if (this.#desiredTint != this.bgImageObj.tint) {
+      this.#tintTween?.destroy();
+      if (immediate) {
+        this.#tintTween = null;
+        this.forceTint(this.#desiredTint);
+        this.onCompleteTint();
+      }
       else {
-        const [r256, g256, b256] = Square.GetRGB256FromColor(newTint);
-        this.scene.tweens.add({
+        const [r256, g256, b256] = Square.GetRGB256FromColor(this.#desiredTint);
+        this.#tintTween = this.scene.tweens.add({
           targets: this,
           tintR256: r256,
           tintG256: g256,
           tintB256: b256,
-          duration: 75,
+          duration: selected != prevSelected ? 25 : 150,
           ease: 'Quad.easeOut',
           // delay: selected ? 0 : Math.max(this.row - this.cave.topRow, 0) * 20,
-          onUpdate: () => this.updateTint()
+          onUpdate: () => this.updateTint(),
+          onComplete: () => this.onCompleteTint()
         });
-      }
+      }      
     }
     
-    this.textObj
-      .setColor(selectable ? Cave.FontColorSelectable : Cave.FontColor)
-    
     // Scale
-    let newScale = selected ? Square.SquareScaleSelected : 1;
-    let curScale = this.scaleX;
-    if (newScale != curScale) {
+    if (selected != prevSelected) {
+      let newScale = selected ? Square.SquareScaleSelected : 1;
+      this.#selectTween?.destroy();
+
+      this.startSelectSquare(selected);
       if (immediate) {
         this.setScale(newScale, newScale);
         this.onUpdateScale();
@@ -194,58 +218,27 @@ export class Square extends Phaser.GameObjects.Container {
       }
       else {
         // Scale tween
-        this.scene.tweens.add({
+        this.#selectTween = this.scene.tweens.add({
           targets: this,
           scaleX: newScale,
           scaleY: newScale,
-          duration: selected ? 175 : 100,
+          duration: selected ? 175 : 125,
           // ease: Square.EaseOutBackExtreme, 
           // ease: 'Bounce.easeOut',
           ease: selected ? 
             (t => Cave.CurveQuad(t, 0.4, 1.6)) :
-            (t => Cave.CurveQuad(t, 0.1, -0.25)),
+            (t => Cave.CurveQuad(t, 0.6, 1.3)),
           onUpdate: () => this.onUpdateScale(),
           onComplete: () => this.onCompleteScale()
         });
       }
     }
 
-    this.currentState = this.state;
     return true;
   }
 
-  setSelectable = (flag = true) =>
-    this.setStateMask(Square.StateMask_Selectable, flag);
-  isSelectable = () => this.getStateMask(Square.StateMask_Selectable);
-
-  setSelected = (flag = true) =>
-    this.setStateMask(Square.StateMask_Selected, flag);
-  isSelected = () => this.getStateMask(Square.StateMask_Selected);
-
-  setSelectedValid = (flag = true) =>
-    this.setStateMask(Square.StateMask_SelectedValid, flag);
-  isSelectedValid = () => this.getStateMask(Square.StateMask_SelectedValid);
-
-  // Change flags and visualize (possibly delayed)
-  selectSquare(select = true, delay = 0) {
-    if (!this.setSelected(select))
-      return false;
-
-    if (delay > 0)
-      this.scene.time.delayedCall(delay * 1000, () => this.selectSquareFinalize(select));
-    else
-      this.selectSquareFinalize(select);
-
-    return true;
-  }
-
-  // Visual changes
-  selectSquareFinalize(select) {
-    if (!this.updateState())
-      return;
-
+  startSelectSquare(select) {
     if (select) {
-
       // Remove old outline if during animation
       this.outlineImage?.destroy();
       // Outline image is placed separately in the original container
@@ -254,21 +247,19 @@ export class Square extends Phaser.GameObjects.Container {
         .setDisplaySize(this.bgImageObj.displayWidth, this.bgImageObj.displayHeight);
       this.onUpdateScale();
       
-      // Add to the topmost container, in the back
+      // Add outline to the topmost container, in the back
       this.cave.selectedSquaresContainer.addAt(this.outlineImage, 0);
 
       // Add to the topmost container, top
       this.cave.selectedSquaresContainer.add(this);
     }
+    else {
+      if (this.outlineImage)
+        this.cave.squaresContainer.add(this.outlineImage);
+      this.cave.squaresContainer.add(this);
+    }
   }
 
-  /**
-   * Sets or clears the specified flag(s) in the state mask.
-   *
-   * @param {number} flagMask - The bitmask representing the flag(s) to set or clear.
-   * @param {boolean} [on=true] - If true, the flag(s) in the mask will be set; if false, the flag(s) will be cleared.
-   * @returns {boolean} - Returns true if the state has changed, otherwise false.
-   */
   setStateMask(flagMask, on = true) {
     let prevState = this.state;
     if (on)
@@ -278,13 +269,42 @@ export class Square extends Phaser.GameObjects.Container {
     return this.state !== prevState;
   }
   
-  /**
-   * Checks if the specified flag(s) are set in the state mask.
-   *
-   * @param {number} flagMask - The bitmask representing the flag(s) to check.
-   * @returns {boolean} - Returns true if the flag(s) are set, otherwise false.
-   */
-  getStateMask = flagMask => (this.state & flagMask) !== 0;
+  getStateMask = (flagMask, state = this.state) => (state & flagMask) !== 0;
+
+  setSelectable = (flag = true) =>
+    this.setStateMask(Square.StateMask_Selectable, flag);
+  isSelectable = (state = this.state) => this.getStateMask(Square.StateMask_Selectable, state);
+
+  setSelected = (flag = true) =>
+    this.setStateMask(Square.StateMask_Selected, flag);
+  isSelected = (state = this.state) => this.getStateMask(Square.StateMask_Selected, state);
+
+  setSelectedValid = (flag = true) =>
+    this.setStateMask(Square.StateMask_SelectedValid, flag);
+  isSelectedValid = (state) => this.getStateMask(Square.StateMask_SelectedValid, state);
+
+  // Change flags and visualize (possibly delayed)
+  selectSquare(select = true, delay = 0) {
+    if (!this.setSelected(select))
+      return false;
+
+    if (delay > 0)
+      this.scene.time.delayedCall(delay * 1000, () => this.updateVisualState());
+    else
+      this.updateVisualState();
+
+    return true;
+  }
+
+  destroy() {
+    this.#selectTween?.destroy();
+    this.#tintTween?.destroy();
+    this.outlineImage?.destroy();
+    this.textObj.destroy();
+    this.bgImageObj.destroy();
+    this.debugText.destroy();
+    super.destroy();
+  }
 
   //
   // Visuals
