@@ -59,7 +59,9 @@ export class Cave extends Phaser.GameObjects.Container {
   static AdjacentTokenRepeatWeight = 0.35;
 
   // How permissive the diamond size is for swiping. 0.5 is a perfect center diamond, larger cuts into the corners.
-  static SwipeDiamondThreshold = 1;
+  static SwipeDiamondThreshold = 0.5;
+  // How straight (degrees) the swipe must be to be considered a straight line and allow for using the full square vs diamond
+  static StraightAngleThreshold = 15;
 
   // Frequency in secs between deselects in chain
   static DelayFrequencyDeselect = 0.035;
@@ -221,8 +223,14 @@ export class Cave extends Phaser.GameObjects.Container {
     else {
       let modX = (pointer.x % this.squareSize) / this.squareSize;
       let modY = (pointer.y % this.squareSize) / this.squareSize;
-      // If inside diamond
-      if (Math.abs(modX - 0.5) + Math.abs(modY - 0.5) <= Cave.SwipeDiamondThreshold) {
+      // Check if pointer is moving diagonally
+      let angleDeg = pointer.angle * (180 / Math.PI);
+      let angleDeg90 = (angleDeg + 180) % 90;
+      let angleIsStraight = Math.abs(angleDeg90 - 45) > (45 - Cave.StraightAngleThreshold);
+      
+      // If straight movement, ensure it's in the the center diamond
+      if (angleIsStraight ||
+        Math.abs(modX - 0.5) + Math.abs(modY - 0.5) <= Cave.SwipeDiamondThreshold) {
         let column = Math.floor(pointer.x / this.squareSize);
         let row = this.topRow + Math.floor(pointer.y / this.squareSize);
         // And stepped into a new square
