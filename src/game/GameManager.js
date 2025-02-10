@@ -8,10 +8,10 @@ export class GameManager {
   static Debug = 1;
   static LanguageCode = 'en';
 
-  static SqColorUnselectable = Cave.ParseColorFromString('#3d3e43');
-  static SqColorSelectable = Cave.ParseColorFromString('#ffffff');
-  static SqColorSelected = Cave.ParseColorFromString('#ec9a3d');
-  static SqColorValid = Cave.ParseColorFromString('#80ec3d');
+  static SqColorUnselectable = Phaser.Display.Color.ValueToColor('#3d3e43');
+  static SqColorSelectable = Phaser.Display.Color.ValueToColor('#ffffff');
+  static SqColorSelected = Phaser.Display.Color.ValueToColor('#ec9a3d');
+  static SqColorValid = Phaser.Display.Color.ValueToColor('#80ec3d');
 
   static ButtonColorValid = Phaser.Display.Color.ValueToColor('#80ec3d');
   static ButtonColorInvalid = Phaser.Display.Color.ValueToColor('#6e7674');

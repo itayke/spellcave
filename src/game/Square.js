@@ -114,8 +114,11 @@ export class Square extends Phaser.GameObjects.Container {
   }
 
   forceTint(color) {
-    [this.tintR256, this.tintG256, this.tintB256] = Square.GetRGB256FromColor(color);
-    this.bgImageObj.setTint(color);
+    this.tintR256 = color.red;
+    this.tintG256 = color.green;
+    this.tintB256 = color.blue;
+
+    this.bgImageObj.setTint(color.color);
   }
 
   updateTint() {
@@ -130,9 +133,9 @@ export class Square extends Phaser.GameObjects.Container {
 
   onCompleteTint() {
     this.#tintTween = null;
-
+    // If desired tint has changed during the tween, update it
     if (this.#desiredTint != this.bgImageObj.tint)
-      this.forceTint(this.#desiredTint);
+      this.bgImageObj.setTint(this.#desiredTint);
   }
 
   onUpdateScale() {
@@ -176,27 +179,26 @@ export class Square extends Phaser.GameObjects.Container {
 
     this.textObj.setColor(selectable || selected ? GameManager.FontColorSelectable : GameManager.FontColorUnselectable)
         
-    this.#desiredTint = valid ? GameManager.SqColorValid :
+    let targetColor = valid ? GameManager.SqColorValid :
       selected ? GameManager.SqColorSelected :
         selectable ? GameManager.SqColorSelectable :
           GameManager.SqColorUnselectable;
+    this.#desiredTint = targetColor.color;
     
     if (this.#desiredTint != this.bgImageObj.tint) {
       this.#tintTween?.destroy();
       if (immediate) {
-        this.#tintTween = null;
-        this.forceTint(this.#desiredTint);
+        // Will update the tint immediate if different
         this.onCompleteTint();
       }
       else {
-        const [r256, g256, b256] = Square.GetRGB256FromColor(this.#desiredTint);
         this.#tintTween = this.scene.tweens.add({
           targets: this,
-          tintR256: r256,
-          tintG256: g256,
-          tintB256: b256,
-          duration: selected != prevSelected ? 25 : 150,
-          ease: 'Quad.easeOut',
+          tintR256: targetColor.red,
+          tintG256: targetColor.green,
+          tintB256: targetColor.blue,
+          duration: selected != prevSelected ? 25 : 125,
+          ease: 'Linear',
           // delay: selected ? 0 : Math.max(this.row - this.cave.topRow, 0) * 20,
           onUpdate: () => this.updateTint(),
           onComplete: () => this.onCompleteTint()

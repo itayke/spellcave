@@ -112,9 +112,9 @@ export class CaveUI extends Phaser.GameObjects.Container {
     this.scene.tweens.killTweensOf(this.digButtonColor);
     this.scene.tweens.add({
       targets: this.digButtonColor,
-      h: targetColor.h,
-      s: targetColor.s,
-      v: targetColor.v,
+      red: targetColor.red,
+      green: targetColor.green,
+      blue: targetColor.blue,
       duration: 100,
       ease: 'Linear',
       onUpdate: () => this.digButton.setTint(this.digButtonColor.color)
@@ -124,7 +124,7 @@ export class CaveUI extends Phaser.GameObjects.Container {
     this.scene.tweens.add({
       targets: this.digButton,
       scale: this.digButtonScale * (this.isValid ? 1.25 : 1),
-      duration: 200,
+      duration: 150,
       ease: this.isValid ?
         (t => Cave.CurveQuad(t, 0.4, 1.6)) :
         (t => Cave.CurveQuad(t, 0.6, 1.3))
