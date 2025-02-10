@@ -12,7 +12,7 @@ export class Cave extends Phaser.GameObjects.Container {
   static SquareImage = { name: 'square', file: 'squareBg3.png' };
   static SquareOutlineImage = { name: 'squareBgOutline', file: 'squareBgOutline.png' };
 
-  static FontName = 'CaveFont';
+  static Font = { name: 'CaveFont', file: 'PathwayGothicOne-Regular.ttf', sizeFactor: 0.55, spacing: 0 };
 
   // static FontFile = 'MuseoSans-500.otf';
   // static FontFile = 'OdibeeSans-Regular.ttf';  
@@ -22,11 +22,7 @@ export class Cave extends Phaser.GameObjects.Container {
 
   // static FontFile = 'Oswald-Regular.ttf';//'Oswald-Light.ttf';
   // static FontSizeFactor = 0.5;
-  
-  static FontFile = 'PathwayGothicOne-Regular.ttf';
-  static FontSizeFactor = 0.55;
-  
-  static FontSpacing = 0;
+    
   static ExtraRows = 8;
 
   /*
@@ -37,14 +33,6 @@ export class Cave extends Phaser.GameObjects.Container {
   static BgTintSelected = Cave.ParseColorFromString('#f0ef98');
   static BgTintSelectedValid = Cave.ParseColorFromString('#8ef77c');
   */
-  
-  static FontColor = '#f6f7f9';
-  static FontColorSelectable = '#000000';
-
-  static BgTint = Cave.ParseColorFromString('#3d3e43');
-  static BgTintSelectable = Cave.ParseColorFromString('#ffffff');
-  static BgTintSelected = Cave.ParseColorFromString('#ec9a3d');
-  static BgTintSelectedValid = Cave.ParseColorFromString('#80ec3d');
 
   // Distance to enable swipe
   static SwipeMoveThresholdDistSq = 5 * 5;
@@ -82,7 +70,7 @@ export class Cave extends Phaser.GameObjects.Container {
   minRow = 0;
   // Top Row presented on screen now
   topRow = 0;
-  // Maxumum row help in squareLines
+  // Maximum row in squareLines
   maxRow = 100;
 
   // Map of square lines by column. Each line is an array of squares: { <row>: [ sq0, sq1, sq2... ] }
@@ -95,6 +83,7 @@ export class Cave extends Phaser.GameObjects.Container {
   squaresPendingUpdate = new Set();
   // Current word (list of Square objs)
   typedWordSquares = [];
+  // Current word (uppsercase string)
   typedWordString;
 
   // Size of each square in pixels, based on the game size
@@ -116,6 +105,9 @@ export class Cave extends Phaser.GameObjects.Container {
   swipeSquarePos = null;
   // Square clicked on pointer down
   pointerDownStartedOnSelectedSq = null;
+
+  // Reference to the CaveUI
+  caveUI;
 
   constructor(scene, inContainer, columns = 7, rowsOnScreen = 12, seedStr = null) {
     super(scene, 0, 0);
@@ -146,7 +138,7 @@ export class Cave extends Phaser.GameObjects.Container {
     this.#randomTokenFunction = HashManager.getRandomFunction(this.#randomSeed4);
 
     // Calculate the size of the squares based on the game size
-    this.fontSize = this.squareSize * Cave.FontSizeFactor;
+    this.fontSize = this.squareSize * Cave.Font.sizeFactor;
 
     console.log(`Cave size ${this.width},${this.height}, square size ${this.squareSize}, font size ${this.fontSize}`);
     
@@ -155,7 +147,7 @@ export class Cave extends Phaser.GameObjects.Container {
 
     this.updatePendingSquares(true);
 
-    scene.input.on('pointerdown', (pointer) => this.onPointerDown(pointer));    
+    scene.input.on('pointerdown', (pointer, overObjects) => this.onPointerDown(pointer, overObjects));    
     scene.input.on('pointermove', (pointer) => this.onPointerMove(pointer));
     scene.input.on('pointerup', (pointer) => this.onPointerUp(pointer));
     scene.input.on('pointerupoutside', (pointer) => this.onPointerUp(pointer));
@@ -166,10 +158,16 @@ export class Cave extends Phaser.GameObjects.Container {
     this.typedWordSquares = [];
     this.typedWordString = '';
     this.updateSelectableSquares();
+    
+    this.caveUI?.updateWord();
   }
 
 
-  onPointerDown(pointer) {
+  onPointerDown(pointer, overObjects) {
+    // If over UI elements, ignore
+    if (overObjects.length)
+      return;
+
     this.pointerDownStartedOnSelectedSq = null;
 
     let column = Math.floor(pointer.x / this.squareSize);
@@ -469,8 +467,7 @@ export class Cave extends Phaser.GameObjects.Container {
       for (let i = index + 1, delay = 0;
         i < this.typedWordSquares.length;
         i++, delayFreq *= Cave.DelayFrequencyDeselectFactor) {
-        let sqAfter = this.typedWordSquares[i];
-        sqAfter.selectSquare(false, delay += delayFreq);
+        this.typedWordSquares[i].selectSquare(false, delay += delayFreq);
       }
       // Remove through the end
       this.typedWordSquares.splice(index + 1);
@@ -496,6 +493,8 @@ export class Cave extends Phaser.GameObjects.Container {
     let valid = !!str;
     if (valid && GameManager.Debug) console.log(this.typedWordString, '->', str);
     this.typedWordSquares.forEach(sq => sq.setSelectedValid(valid) && this.squaresPendingUpdate.add(sq));
+    
+    this.caveUI?.updateWord(valid);
   }
 
   //

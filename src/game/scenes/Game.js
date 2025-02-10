@@ -14,6 +14,9 @@ export class Game extends Scene {
   // Current cave
   cave;
 
+  // UI for the cave
+  caveUI;
+
   constructor() {
     super('Game');
   }
@@ -23,6 +26,7 @@ export class Game extends Scene {
     this.load.image(Cave.SquareImage.name, Cave.SquareImage.file);
     this.load.image(Cave.SquareOutlineImage.name, Cave.SquareOutlineImage.file);
     this.load.image(CaveUI.CaveOverlayGradient.name, CaveUI.CaveOverlayGradient.file);
+    this.load.image(CaveUI.DigIcon.name, CaveUI.DigIcon.file);    
   }
 
   create() {
@@ -53,10 +57,9 @@ export class Game extends Scene {
     // circle.fillCircle(0, 0, 1000);
     // this.gameContainer.add(circle);
 
-    
+    // Cave and UI
     this.cave = new Cave(this, this.gameContainer);
-    this.caveUI = new CaveUI(this, this.gameContainer);
-
+    this.cave.caveUI = new CaveUI(this, this.gameContainer, this.cave);
   }
 
   changeScene() {

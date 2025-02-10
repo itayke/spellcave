@@ -76,20 +76,20 @@ export class Square extends Phaser.GameObjects.Container {
           Math.ceil(Square.ImageSquareSizeFactor * this.cave.squareSize))
     );
 
-    this.forceTint(Cave.BgTint);
+    this.forceTint(GameManager.SqColorUnselectable);
 
     this.add(
       this.textObj = new Phaser.GameObjects.Text(scene,
         0, 0,
         readableToken, {
-        fontFamily: Cave.FontName,
+        fontFamily: Cave.Font.name,
         fontSize: this.cave.fontSize,
         align: 'center'
       })
-        .setLetterSpacing(Cave.FontSpacing)
+        .setLetterSpacing(Cave.Font.spacing)
         .setOrigin(0.5)
         .setDepth(100)
-        .setColor(Cave.FontColor)
+        .setColor(GameManager.FontColorUnselectable)
     );
 
     // Debug text
@@ -97,12 +97,11 @@ export class Square extends Phaser.GameObjects.Container {
       Math.round(cave.squareSize / 2),
       Math.round(cave.squareSize * 0.85),
       `${row},${column}`, {
-      fontFamily: Cave.FontName,
+      fontFamily: Cave.Font.name,
       color: '#FF0000',
       fontSize: this.cave.fontSize / 4,
       align: 'center'
     })
-      .setLetterSpacing(Cave.FontSpacing)
       .setOrigin(0.5)
       .setDepth(100)
       .setVisible(false);
@@ -175,12 +174,12 @@ export class Square extends Phaser.GameObjects.Container {
     let selectable = this.isSelectable(this.state);
     let valid = selected && this.isSelectedValid(this.state);
 
-    this.textObj.setColor(selectable || selected ? Cave.FontColorSelectable : Cave.FontColor)
+    this.textObj.setColor(selectable || selected ? GameManager.FontColorSelectable : GameManager.FontColorUnselectable)
         
-    this.#desiredTint = valid ? Cave.BgTintSelectedValid :
-      selected ? Cave.BgTintSelected :
-        selectable ? Cave.BgTintSelectable :
-          Cave.BgTint;
+    this.#desiredTint = valid ? GameManager.SqColorValid :
+      selected ? GameManager.SqColorSelected :
+        selectable ? GameManager.SqColorSelectable :
+          GameManager.SqColorUnselectable;
     
     if (this.#desiredTint != this.bgImageObj.tint) {
       this.#tintTween?.destroy();
